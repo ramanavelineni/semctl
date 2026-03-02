@@ -1,0 +1,24 @@
+# Active context
+current_context: "default"
+
+# Server contexts (managed by `semctl login` / `semctl context`)
+contexts:
+  default:
+    server:
+      host: "127.0.0.1"
+      port: 3000
+      scheme: "http"        # http or https
+    auth:
+      username: "admin"
+      password: "changeme"
+      # api_token: ""       # Direct API token (alternative to username/password)
+
+# Default values
+defaults:
+  project_id: 1             # Default project ID for project-scoped commands
+
+# Output preferences
+output:
+  format: "table"           # table, json, yaml
+  color: true
+  emoji: true
