@@ -44,15 +44,35 @@ semctl -p 1 task output 42
 | `login` | Log in to a Semaphore server |
 | `logout` | Log out and remove saved credentials |
 | `context` | Manage multiple server contexts |
-| `project` | List, show, create, update, delete projects |
-| `template` | Manage task templates |
+| `project` | List, show, create, delete projects |
+| `template` | Manage task templates (list, show, create, update, delete) |
 | `task` | Run, stop, list, and view task output |
 | `key` | Manage SSH keys and login credentials |
 | `inventory` | Manage host inventories |
 | `repo` | Manage Git repositories |
-| `env` | Manage environment variables |
+| `env` | Manage variable groups (environments) |
+| `apply` | Apply declarative configuration files |
+| `export` | Export project state to YAML/JSON |
+| `validate` | Validate configuration files offline |
 | `version` | Show CLI version |
 | `completion` | Generate shell completions (bash, zsh, fish, powershell) |
+
+## Declarative Configuration
+
+Define your entire Semaphore project as code and apply it:
+
+```bash
+semctl apply -f project.yaml              # apply a config file
+semctl apply -f project.yaml --dry-run    # preview changes without applying
+semctl apply -f ./config/                 # apply all files in a directory
+semctl export -p 1 -o exported.yaml       # export existing project to YAML
+semctl validate -f project.yaml           # validate config file offline
+```
+
+Resources are matched by name and created, updated, or deleted as needed. Environment variables (`${VAR}`) are expanded before parsing. Set `state: absent` on any resource to delete it, or `project_state: absent` to delete the entire project and all its resources.
+
+- [Example configuration](docs/example.yaml)
+- [Full schema reference](docs/apply-schema.md)
 
 ## Multi-Server Contexts
 

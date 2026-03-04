@@ -1,0 +1,44 @@
+project: homelab
+
+keys:
+  - name: git-ssh-key
+    type: ssh
+    ssh:
+      private_key: "${GIT_SSH_PRIVATE_KEY}"
+
+variable_groups:
+  - group_name: production
+    variables:
+      ansible_user: deploy
+    environment_variables:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+    secrets:
+      ansible_vault_password: "${ANSIBLE_VAULT_PASSWORD}"
+    secret_environment_variables:
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_KEY}"
+
+repositories:
+  - name: ansible
+    git_url: "git@github.com:org/ansible.git"
+    git_branch: main
+    ssh_key: git-ssh-key
+
+inventories:
+  - name: hosts
+    type: file
+    inventory: inventories/hosts
+    ssh_key: host-ssh-key
+    repository: ansible
+
+templates:
+  - name: deploy
+    app: ansible
+    playbook: deploy.yaml
+    repository: ansible
+    variable_group: production
+    inventory: hosts
+
+schedules:
+  - name: nightly-deploy
+    cron_format: "0 2 * * *"
+    template: deploy

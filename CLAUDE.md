@@ -31,6 +31,16 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Include key changes as bullet points in the commit body
 - Example: `feat(cmd): add CRUD commands for all project resources`
 
+## Declarative Apply System (`internal/apply/`)
+- Config types in `types.go`, reconciliation in `reconcile.go`, execution in `executor.go`, export in `export.go`
+- "Variable Groups" (UI/CLI) = "Environments" (API) — use `apiClient.VariableGroup` client, `models.Environment*` types
+- EnvironmentRequest fields: `JSON` (extra vars), `Env` (env vars) — both expect JSON strings, NOT `KEY=VALUE`
+- EnvironmentSecretRequest: `Type` is `"var"` (extra vars) or `"env"` (env vars); `Operation` is `"create"`, `"update"`, or `"delete"`
+- On secret update: match existing secrets by name to get IDs, use `operation: "update"` for existing, `"create"` for new
+- Processing order — create: project→keys→variable_groups→repos→inventories→templates→schedules; delete: reverse
+- All resource name lookups are case-insensitive (`strings.EqualFold`)
+- Schema reference: `docs/apply-schema.md`
+
 ## Build
 ```bash
 make                # Default: fmt + vet + build
