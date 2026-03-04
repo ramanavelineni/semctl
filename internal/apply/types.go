@@ -13,8 +13,9 @@ import (
 // ApplyConfig represents the full declarative configuration file.
 type ApplyConfig struct {
 	Project       string           `json:"project" yaml:"project"`
+	ProjectState  string           `json:"project_state,omitempty" yaml:"project_state,omitempty"`
 	Keys          []KeyEntry       `json:"keys,omitempty" yaml:"keys,omitempty"`
-	Environments  []EnvEntry       `json:"environments,omitempty" yaml:"environments,omitempty"`
+	VariableGroups []VariableGroupEntry `json:"variable_groups,omitempty" yaml:"variable_groups,omitempty"`
 	Repositories  []RepoEntry      `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	Inventories   []InventoryEntry `json:"inventories,omitempty" yaml:"inventories,omitempty"`
 	Templates     []TemplateEntry  `json:"templates,omitempty" yaml:"templates,omitempty"`
@@ -43,13 +44,23 @@ type LoginPasswordData struct {
 	Password string `json:"password,omitempty" yaml:"password,omitempty"`
 }
 
-// EnvEntry represents an environment in the config file.
-type EnvEntry struct {
-	Name     string `json:"name" yaml:"name"`
-	State    string `json:"state,omitempty" yaml:"state,omitempty"`
-	JSON     string `json:"json,omitempty" yaml:"json,omitempty"`
-	Env      string `json:"env,omitempty" yaml:"env,omitempty"`
-	Password string `json:"password,omitempty" yaml:"password,omitempty"`
+// VariableGroupEntry represents a variable group in the config file.
+type VariableGroupEntry struct {
+	Name                         string            `json:"group_name" yaml:"group_name"`
+	State                        string            `json:"state,omitempty" yaml:"state,omitempty"`
+	Variables                    map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
+	EnvironmentVariables         map[string]string `json:"environment_variables,omitempty" yaml:"environment_variables,omitempty"`
+	Secrets                      map[string]string `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	SecretEnvironmentVariables   map[string]string `json:"secret_environment_variables,omitempty" yaml:"secret_environment_variables,omitempty"`
+}
+
+// EnvVarsToJSON serializes an environment variables map into a JSON string for the API's env field.
+func EnvVarsToJSON(vars map[string]string) string {
+	if len(vars) == 0 {
+		return "{}"
+	}
+	data, _ := json.Marshal(vars)
+	return string(data)
 }
 
 // RepoEntry represents a repository in the config file.
@@ -92,7 +103,8 @@ type TemplateEntry struct {
 	AllowOverrideArgsInTask bool   `json:"allow_override_args_in_task,omitempty" yaml:"allow_override_args_in_task,omitempty"`
 	Repository              string `json:"repository,omitempty" yaml:"repository,omitempty"`
 	RepositoryID            int64  `json:"repository_id,omitempty" yaml:"repository_id,omitempty"`
-	Environment             string `json:"environment,omitempty" yaml:"environment,omitempty"`
+	VariableGroup           string `json:"variable_group,omitempty" yaml:"variable_group,omitempty"`
+	Environment             string `json:"environment,omitempty" yaml:"environment,omitempty"` // alias for variable_group
 	EnvironmentID           int64  `json:"environment_id,omitempty" yaml:"environment_id,omitempty"`
 	Inventory               string `json:"inventory,omitempty" yaml:"inventory,omitempty"`
 	InventoryID             int64  `json:"inventory_id,omitempty" yaml:"inventory_id,omitempty"`
@@ -192,11 +204,15 @@ func (c *ApplyConfig) Validate() error {
 		return fmt.Errorf("project name is required")
 	}
 
+	if c.ProjectState != "" && c.ProjectState != "absent" {
+		return fmt.Errorf("project_state must be \"absent\" or empty")
+	}
+
 	// Check for duplicate names within each resource type
 	if err := checkDuplicateNames("keys", keyNames(c.Keys)); err != nil {
 		return err
 	}
-	if err := checkDuplicateNames("environments", envNames(c.Environments)); err != nil {
+	if err := checkDuplicateNames("variable_groups", varGroupNames(c.VariableGroups)); err != nil {
 		return err
 	}
 	if err := checkDuplicateNames("repositories", repoNames(c.Repositories)); err != nil {
@@ -230,9 +246,9 @@ func (c *ApplyConfig) Validate() error {
 		}
 	}
 
-	for i, e := range c.Environments {
-		if e.Name == "" {
-			return fmt.Errorf("environments[%d]: name is required", i)
+	for i, vg := range c.VariableGroups {
+		if vg.Name == "" {
+			return fmt.Errorf("variable_groups[%d]: group_name is required", i)
 		}
 	}
 
@@ -265,9 +281,17 @@ func (c *ApplyConfig) Validate() error {
 		}
 	}
 
-	for i, t := range c.Templates {
-		if t.Name == "" {
+	for i := range c.Templates {
+		if c.Templates[i].Name == "" {
 			return fmt.Errorf("templates[%d]: name is required", i)
+		}
+		// Support "environment" as alias for "variable_group" in template refs
+		if c.Templates[i].Environment != "" && c.Templates[i].VariableGroup != "" {
+			return fmt.Errorf("templates[%d] %q: cannot specify both \"environment\" and \"variable_group\"", i, c.Templates[i].Name)
+		}
+		if c.Templates[i].Environment != "" {
+			c.Templates[i].VariableGroup = c.Templates[i].Environment
+			c.Templates[i].Environment = ""
 		}
 	}
 
@@ -284,6 +308,15 @@ func (c *ApplyConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// VarsToJSON serializes a variables map into a JSON string for the API's json field.
+func VarsToJSON(vars map[string]string) string {
+	if len(vars) == 0 {
+		return "{}"
+	}
+	data, _ := json.Marshal(vars)
+	return string(data)
 }
 
 func checkDuplicateNames(resource string, names []string) error {
@@ -306,7 +339,7 @@ func keyNames(entries []KeyEntry) []string {
 	return names
 }
 
-func envNames(entries []EnvEntry) []string {
+func varGroupNames(entries []VariableGroupEntry) []string {
 	names := make([]string, len(entries))
 	for i, e := range entries {
 		names[i] = e.Name

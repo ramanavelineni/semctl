@@ -26,7 +26,7 @@ var v *viper.Viper
 // Load initializes Viper and loads the config file.
 func Load(cfgFile string) error {
 	v = viper.New()
-	v.SetConfigName("semctl")
+	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 	v.SetEnvPrefix("SEMCTL")
 	v.AutomaticEnv()

@@ -17,9 +17,10 @@ keys:
     ssh:
       login: deploy
       private_key: "secret-key"
-environments:
-  - name: "Production"
-    json: '{"db": "10.0.0.1"}'
+variable_groups:
+  - group_name: "Production"
+    variables:
+      db: "10.0.0.1"
 repositories:
   - name: "Main Repo"
     git_url: "git@github.com:org/repo.git"
@@ -58,8 +59,8 @@ schedules:
 	if cfg.Keys[0].SSH.PrivateKey != "secret-key" {
 		t.Errorf("Keys[0].SSH.PrivateKey = %q, want %q", cfg.Keys[0].SSH.PrivateKey, "secret-key")
 	}
-	if len(cfg.Environments) != 1 {
-		t.Fatalf("len(Environments) = %d, want 1", len(cfg.Environments))
+	if len(cfg.VariableGroups) != 1 {
+		t.Fatalf("len(VariableGroups) = %d, want 1", len(cfg.VariableGroups))
 	}
 	if len(cfg.Repositories) != 1 {
 		t.Fatalf("len(Repositories) = %d, want 1", len(cfg.Repositories))
@@ -253,7 +254,7 @@ func TestValidateValid(t *testing.T) {
 	cfg := &ApplyConfig{
 		Project: "Test",
 		Keys:    []KeyEntry{{Name: "Key1", Type: "none"}},
-		Environments: []EnvEntry{{Name: "Env1"}},
+		VariableGroups: []VariableGroupEntry{{Name: "vg1"}},
 		Repositories: []RepoEntry{{Name: "Repo1", GitURL: "git@github.com:org/repo.git"}},
 		Inventories:  []InventoryEntry{{Name: "Inv1", Type: "static"}},
 		Templates:    []TemplateEntry{{Name: "Tpl1"}},

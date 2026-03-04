@@ -39,19 +39,21 @@ var templateCreateCmd = &cobra.Command{
 		}
 
 		req := &models.TemplateRequest{
-			ProjectID:     int64(pid),
-			Name:          name,
-			Type:          tplType,
-			App:           app,
-			Playbook:      playbook,
-			RepositoryID:  repoID,
-			EnvironmentID: envID,
-			InventoryID:   invID,
-			GitBranch:     gitBranch,
-			Description:   description,
-			Autorun:       autorun,
+			ProjectID:       int64(pid),
+			Name:            name,
+			Type:            tplType,
+			App:             app,
+			Playbook:        playbook,
+			RepositoryID:    repoID,
+			EnvironmentID:   envID,
+			InventoryID:     invID,
+			GitBranch:       gitBranch,
+			Description:     description,
+			Autorun:         autorun,
 			BuildTemplateID: buildTplID,
-			ViewID:        viewID,
+			ViewID:          viewID,
+			SurveyVars:     []*models.TemplateSurveyVar{},
+			Vaults:         []*models.TemplateVault{},
 		}
 
 		apiClient, err := client.NewAuthenticatedClient()

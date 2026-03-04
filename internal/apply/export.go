@@ -46,8 +46,8 @@ func ParseResourceFilter(s string) ([]ResourceType, error) {
 		switch part {
 		case "keys", "key":
 			rt = ResourceKey
-		case "environments", "envs", "env":
-			rt = ResourceEnvironment
+		case "variable_groups", "variable-groups", "vg", "environments", "envs", "env":
+			rt = ResourceVariableGroup
 		case "repositories", "repos", "repo":
 			rt = ResourceRepository
 		case "inventories", "inventory", "inv":
@@ -55,7 +55,7 @@ func ParseResourceFilter(s string) ([]ResourceType, error) {
 		case "templates", "template", "tpl":
 			rt = ResourceTemplate
 		default:
-			return nil, fmt.Errorf("unknown resource type %q (valid: keys, environments, repositories, inventories, templates)", part)
+			return nil, fmt.Errorf("unknown resource type %q (valid: keys, variable_groups, repositories, inventories, templates)", part)
 		}
 		if !seen[rt] {
 			seen[rt] = true
@@ -99,8 +99,8 @@ func (e *Exporter) Export(projectName string) (*ApplyConfig, error) {
 	for _, env := range envs {
 		envIDToName[env.ID] = env.Name
 	}
-	if e.includeType(ResourceEnvironment) {
-		cfg.Environments = convertEnvironments(envs)
+	if e.includeType(ResourceVariableGroup) {
+		cfg.VariableGroups = convertVariableGroups(envs)
 	}
 
 	// Fetch repositories
@@ -230,14 +230,39 @@ func convertKeys(keys []*models.AccessKey) []KeyEntry {
 	return result
 }
 
-func convertEnvironments(envs []*models.Environment) []EnvEntry {
-	var result []EnvEntry
+func convertVariableGroups(envs []*models.Environment) []VariableGroupEntry {
+	var result []VariableGroupEntry
 	for _, env := range envs {
-		result = append(result, EnvEntry{
+		entry := VariableGroupEntry{
 			Name: env.Name,
-			JSON: env.JSON,
-			Env:  env.Env,
-		})
+		}
+		if env.JSON != "" && env.JSON != "{}" {
+			var vars map[string]string
+			if err := json.Unmarshal([]byte(env.JSON), &vars); err == nil {
+				entry.Variables = vars
+			}
+		}
+		if env.Env != "" && env.Env != "{}" {
+			var envVars map[string]string
+			if err := json.Unmarshal([]byte(env.Env), &envVars); err == nil {
+				entry.EnvironmentVariables = envVars
+			}
+		}
+		for _, s := range env.Secrets {
+			switch s.Type {
+			case "env":
+				if entry.SecretEnvironmentVariables == nil {
+					entry.SecretEnvironmentVariables = make(map[string]string)
+				}
+				entry.SecretEnvironmentVariables[s.Name] = "<set-me>"
+			default:
+				if entry.Secrets == nil {
+					entry.Secrets = make(map[string]string)
+				}
+				entry.Secrets[s.Name] = "<set-me>"
+			}
+		}
+		result = append(result, entry)
 	}
 	return result
 }
@@ -311,7 +336,7 @@ func convertTemplates(templates []*models.Template, repoIDToName, envIDToName, i
 			entry.RepositoryID = t.RepositoryID
 		}
 		if name, ok := envIDToName[t.EnvironmentID]; ok && t.EnvironmentID != 0 {
-			entry.Environment = name
+			entry.VariableGroup = name
 		} else if t.EnvironmentID != 0 {
 			entry.EnvironmentID = t.EnvironmentID
 		}

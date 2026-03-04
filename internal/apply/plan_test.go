@@ -94,7 +94,7 @@ func TestPlanSummary(t *testing.T) {
 func TestPlanActionsByType(t *testing.T) {
 	p := &Plan{Actions: []ResourceAction{
 		{Type: ResourceKey, Action: ActionCreate, Label: "k1"},
-		{Type: ResourceEnvironment, Action: ActionCreate, Label: "e1"},
+		{Type: ResourceVariableGroup, Action: ActionCreate, Label: "e1"},
 		{Type: ResourceKey, Action: ActionSkip, Label: "k2"},
 	}}
 
@@ -106,9 +106,9 @@ func TestPlanActionsByType(t *testing.T) {
 		t.Errorf("unexpected key labels: %q, %q", keys[0].Label, keys[1].Label)
 	}
 
-	envs := p.ActionsByType(ResourceEnvironment)
+	envs := p.ActionsByType(ResourceVariableGroup)
 	if len(envs) != 1 {
-		t.Fatalf("ActionsByType(ResourceEnvironment) returned %d, want 1", len(envs))
+		t.Fatalf("ActionsByType(ResourceVariableGroup) returned %d, want 1", len(envs))
 	}
 }
 

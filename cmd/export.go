@@ -98,5 +98,5 @@ func init() {
 	rootCmd.AddCommand(exportCmd)
 
 	exportCmd.Flags().StringP("output", "o", "", "output file path (auto-detects format from extension)")
-	exportCmd.Flags().String("only", "", "export only specific resource types (comma-separated: keys,environments,repositories,inventories,templates)")
+	exportCmd.Flags().String("only", "", "export only specific resource types (comma-separated: keys,variable_groups,repositories,inventories,templates)")
 }

@@ -54,49 +54,49 @@ func TestKeyNeedsUpdate(t *testing.T) {
 	}
 }
 
-func TestEnvNeedsUpdate(t *testing.T) {
+func TestVarGroupNeedsUpdate(t *testing.T) {
 	tests := []struct {
 		name     string
-		entry    EnvEntry
+		entry    VariableGroupEntry
 		existing *models.Environment
 		want     bool
 	}{
 		{
 			name:     "no changes",
-			entry:    EnvEntry{Name: "e"},
+			entry:    VariableGroupEntry{Name: "e"},
 			existing: &models.Environment{Name: "e"},
 			want:     false,
 		},
 		{
-			name:     "json changed",
-			entry:    EnvEntry{Name: "e", JSON: `{"new":"val"}`},
+			name:     "variables changed",
+			entry:    VariableGroupEntry{Name: "e", Variables: map[string]string{"new": "val"}},
 			existing: &models.Environment{Name: "e", JSON: `{"old":"val"}`},
 			want:     true,
 		},
 		{
-			name:     "json same",
-			entry:    EnvEntry{Name: "e", JSON: `{"k":"v"}`},
+			name:     "variables same",
+			entry:    VariableGroupEntry{Name: "e", Variables: map[string]string{"k": "v"}},
 			existing: &models.Environment{Name: "e", JSON: `{"k":"v"}`},
 			want:     false,
 		},
 		{
-			name:     "password set",
-			entry:    EnvEntry{Name: "e", Password: "secret"},
-			existing: &models.Environment{Name: "e"},
-			want:     true,
+			name:     "no variables or secrets",
+			entry:    VariableGroupEntry{Name: "e"},
+			existing: &models.Environment{Name: "e", JSON: `{}`},
+			want:     false,
 		},
 		{
-			name:     "env changed",
-			entry:    EnvEntry{Name: "e", Env: "new"},
-			existing: &models.Environment{Name: "e", Env: "old"},
+			name:     "secrets always re-applied",
+			entry:    VariableGroupEntry{Name: "e", Secrets: map[string]string{"pw": "secret"}},
+			existing: &models.Environment{Name: "e"},
 			want:     true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := envNeedsUpdate(tt.entry, tt.existing); got != tt.want {
-				t.Errorf("envNeedsUpdate() = %v, want %v", got, tt.want)
+			if got := varGroupNeedsUpdate(tt.entry, tt.existing); got != tt.want {
+				t.Errorf("varGroupNeedsUpdate() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -157,7 +157,7 @@ func TestRepoNeedsUpdate(t *testing.T) {
 func TestTemplateNeedsUpdate(t *testing.T) {
 	r := &Reconciler{
 		RepoIDByName:      map[string]int64{"main repo": 10},
-		EnvIDByName:       map[string]int64{"prod": 20},
+		VarGroupIDByName:  map[string]int64{"prod": 20},
 		InventoryIDByName: map[string]int64{"hosts": 30},
 		TemplateIDByName:  map[string]int64{"build": 40},
 	}
@@ -199,8 +199,8 @@ func TestTemplateNeedsUpdate(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "env ref by name same",
-			entry:    TemplateEntry{Name: "t", Environment: "Prod"},
+			name:     "variable group ref by name same",
+			entry:    TemplateEntry{Name: "t", VariableGroup: "Prod"},
 			existing: &models.Template{Name: "t", EnvironmentID: 20},
 			want:     false,
 		},
@@ -260,7 +260,7 @@ func TestFindByNameHelpers(t *testing.T) {
 func TestResolveIDHelpers(t *testing.T) {
 	r := &Reconciler{
 		KeyIDByName:       map[string]int64{"mykey": 5},
-		EnvIDByName:       map[string]int64{"myenv": 10},
+		VarGroupIDByName:  map[string]int64{"myenv": 10},
 		RepoIDByName:      map[string]int64{"myrepo": 15},
 		InventoryIDByName: map[string]int64{"myinv": 20},
 		TemplateIDByName:  map[string]int64{"mytpl": 25},
@@ -282,8 +282,8 @@ func TestResolveIDHelpers(t *testing.T) {
 	}
 
 	// Same pattern for others
-	if id := r.resolveEnvID("myenv", 0); id != 10 {
-		t.Errorf("resolveEnvID = %d, want 10", id)
+	if id := r.resolveVarGroupID("myenv", 0); id != 10 {
+		t.Errorf("resolveVarGroupID = %d, want 10", id)
 	}
 	if id := r.resolveRepoID("myrepo", 0); id != 15 {
 		t.Errorf("resolveRepoID = %d, want 15", id)

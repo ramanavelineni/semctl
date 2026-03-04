@@ -53,7 +53,7 @@ type ResourceType string
 const (
 	ResourceProject     ResourceType = "project"
 	ResourceKey         ResourceType = "keys"
-	ResourceEnvironment ResourceType = "environments"
+	ResourceVariableGroup ResourceType = "variable_groups"
 	ResourceRepository  ResourceType = "repositories"
 	ResourceInventory   ResourceType = "inventories"
 	ResourceTemplate    ResourceType = "templates"
@@ -125,7 +125,7 @@ func (p *Plan) FormatPlan() string {
 	types := []ResourceType{
 		ResourceProject,
 		ResourceKey,
-		ResourceEnvironment,
+		ResourceVariableGroup,
 		ResourceRepository,
 		ResourceInventory,
 		ResourceTemplate,

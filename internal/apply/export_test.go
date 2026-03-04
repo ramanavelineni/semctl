@@ -28,8 +28,8 @@ func TestParseResourceFilterValid(t *testing.T) {
 	if result[0] != ResourceKey {
 		t.Errorf("result[0] = %q, want %q", result[0], ResourceKey)
 	}
-	if result[1] != ResourceEnvironment {
-		t.Errorf("result[1] = %q, want %q", result[1], ResourceEnvironment)
+	if result[1] != ResourceVariableGroup {
+		t.Errorf("result[1] = %q, want %q", result[1], ResourceVariableGroup)
 	}
 	if result[2] != ResourceRepository {
 		t.Errorf("result[2] = %q, want %q", result[2], ResourceRepository)
@@ -43,9 +43,11 @@ func TestParseResourceFilterAliases(t *testing.T) {
 	}{
 		{"key", ResourceKey},
 		{"keys", ResourceKey},
-		{"env", ResourceEnvironment},
-		{"envs", ResourceEnvironment},
-		{"environments", ResourceEnvironment},
+		{"env", ResourceVariableGroup},
+		{"envs", ResourceVariableGroup},
+		{"environments", ResourceVariableGroup},
+		{"variable_groups", ResourceVariableGroup},
+		{"vg", ResourceVariableGroup},
 		{"repo", ResourceRepository},
 		{"repos", ResourceRepository},
 		{"repositories", ResourceRepository},
@@ -91,8 +93,8 @@ func TestMarshalYAMLRoundTrip(t *testing.T) {
 		Keys: []KeyEntry{
 			{Name: "Key1", Type: "none"},
 		},
-		Environments: []EnvEntry{
-			{Name: "Prod", JSON: `{"k":"v"}`},
+		VariableGroups: []VariableGroupEntry{
+			{Name: "Prod", Variables: map[string]string{"k": "v"}},
 		},
 	}
 
@@ -112,8 +114,8 @@ func TestMarshalYAMLRoundTrip(t *testing.T) {
 	if len(parsed.Keys) != 1 || parsed.Keys[0].Name != "Key1" {
 		t.Errorf("Keys roundtrip failed")
 	}
-	if len(parsed.Environments) != 1 || parsed.Environments[0].Name != "Prod" {
-		t.Errorf("Environments roundtrip failed")
+	if len(parsed.VariableGroups) != 1 || parsed.VariableGroups[0].Name != "Prod" {
+		t.Errorf("VariableGroups roundtrip failed")
 	}
 }
 

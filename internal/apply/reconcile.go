@@ -22,7 +22,7 @@ type Reconciler struct {
 
 	// Name-to-ID maps populated during reconciliation
 	KeyIDByName       map[string]int64
-	EnvIDByName       map[string]int64
+	VarGroupIDByName       map[string]int64
 	RepoIDByName      map[string]int64
 	InventoryIDByName map[string]int64
 	TemplateIDByName  map[string]int64
@@ -34,7 +34,7 @@ func NewReconciler(client *apiclient.Semapi, config *ApplyConfig) *Reconciler {
 		client:            client,
 		config:            config,
 		KeyIDByName:       make(map[string]int64),
-		EnvIDByName:       make(map[string]int64),
+		VarGroupIDByName:       make(map[string]int64),
 		RepoIDByName:      make(map[string]int64),
 		InventoryIDByName: make(map[string]int64),
 		TemplateIDByName:  make(map[string]int64),
@@ -68,12 +68,20 @@ func (r *Reconciler) BuildPlan() (*Plan, error) {
 		return plan, nil
 	}
 
+	// If project is being deleted, fetch all children and mark them for deletion
+	if projectAction.Action == ActionDelete {
+		if err := r.buildAllAsDelete(plan); err != nil {
+			return nil, fmt.Errorf("building delete plan: %w", err)
+		}
+		return plan, nil
+	}
+
 	// Step 2: Reconcile in dependency order
 	if err := r.reconcileKeys(plan); err != nil {
 		return nil, fmt.Errorf("reconciling keys: %w", err)
 	}
-	if err := r.reconcileEnvironments(plan); err != nil {
-		return nil, fmt.Errorf("reconciling environments: %w", err)
+	if err := r.reconcileVariableGroups(plan); err != nil {
+		return nil, fmt.Errorf("reconciling variable groups: %w", err)
 	}
 	if err := r.reconcileRepositories(plan); err != nil {
 		return nil, fmt.Errorf("reconciling repositories: %w", err)
@@ -98,7 +106,7 @@ func (r *Reconciler) BuildPlan() (*Plan, error) {
 	return plan, nil
 }
 
-// resolveProject finds an existing project by name or plans a create.
+// resolveProject finds an existing project by name or plans a create/delete.
 func (r *Reconciler) resolveProject() (ResourceAction, error) {
 	resp, err := r.client.Project.GetProjects(project.NewGetProjectsParams(), nil)
 	if err != nil {
@@ -108,6 +116,16 @@ func (r *Reconciler) resolveProject() (ResourceAction, error) {
 	for _, p := range resp.GetPayload() {
 		if strings.EqualFold(p.Name, r.config.Project) {
 			r.projectID = p.ID
+
+			if r.config.ProjectState == "absent" {
+				return ResourceAction{
+					Type:       ResourceProject,
+					Action:     ActionDelete,
+					Label:      p.Name,
+					ExistingID: p.ID,
+				}, nil
+			}
+
 			return ResourceAction{
 				Type:       ResourceProject,
 				Action:     ActionSkip,
@@ -115,6 +133,15 @@ func (r *Reconciler) resolveProject() (ResourceAction, error) {
 				ExistingID: p.ID,
 			}, nil
 		}
+	}
+
+	if r.config.ProjectState == "absent" {
+		return ResourceAction{
+			Type:   ResourceProject,
+			Action: ActionSkip,
+			Label:  r.config.Project,
+			Description: "already absent",
+		}, nil
 	}
 
 	return ResourceAction{
@@ -137,14 +164,14 @@ func (r *Reconciler) buildAllAsCreate(plan *Plan) {
 			Index:  i,
 		})
 	}
-	for i, e := range r.config.Environments {
-		if e.State == "absent" {
+	for i, vg := range r.config.VariableGroups {
+		if vg.State == "absent" {
 			continue
 		}
 		plan.Actions = append(plan.Actions, ResourceAction{
-			Type:   ResourceEnvironment,
+			Type:   ResourceVariableGroup,
 			Action: ActionCreate,
-			Label:  e.Name,
+			Label:  vg.Name,
 			Index:  i,
 		})
 	}
@@ -189,6 +216,88 @@ func (r *Reconciler) buildAllAsCreate(plan *Plan) {
 			Index:  i,
 		})
 	}
+}
+
+// buildAllAsDelete fetches all existing child resources and marks them for deletion.
+func (r *Reconciler) buildAllAsDelete(plan *Plan) error {
+	pid := r.projectID
+
+	// Templates
+	tplResp, err := r.client.Template.GetProjectProjectIDTemplates(
+		template.NewGetProjectProjectIDTemplatesParams().WithProjectID(pid), nil)
+	if err != nil {
+		return fmt.Errorf("listing templates: %w", err)
+	}
+	for _, t := range tplResp.GetPayload() {
+		plan.Actions = append(plan.Actions, ResourceAction{
+			Type:       ResourceTemplate,
+			Action:     ActionDelete,
+			Label:      t.Name,
+			ExistingID: t.ID,
+		})
+	}
+
+	// Inventories
+	invResp, err := r.client.Inventory.GetProjectProjectIDInventory(
+		inventory.NewGetProjectProjectIDInventoryParams().WithProjectID(pid), nil)
+	if err != nil {
+		return fmt.Errorf("listing inventories: %w", err)
+	}
+	for _, inv := range invResp.GetPayload() {
+		plan.Actions = append(plan.Actions, ResourceAction{
+			Type:       ResourceInventory,
+			Action:     ActionDelete,
+			Label:      inv.Name,
+			ExistingID: inv.ID,
+		})
+	}
+
+	// Repositories
+	repoResp, err := r.client.Repository.GetProjectProjectIDRepositories(
+		repository.NewGetProjectProjectIDRepositoriesParams().WithProjectID(pid), nil)
+	if err != nil {
+		return fmt.Errorf("listing repositories: %w", err)
+	}
+	for _, repo := range repoResp.GetPayload() {
+		plan.Actions = append(plan.Actions, ResourceAction{
+			Type:       ResourceRepository,
+			Action:     ActionDelete,
+			Label:      repo.Name,
+			ExistingID: repo.ID,
+		})
+	}
+
+	// Environments
+	envResp, err := r.client.VariableGroup.GetProjectProjectIDEnvironment(
+		variable_group.NewGetProjectProjectIDEnvironmentParams().WithProjectID(pid), nil)
+	if err != nil {
+		return fmt.Errorf("listing environments: %w", err)
+	}
+	for _, env := range envResp.GetPayload() {
+		plan.Actions = append(plan.Actions, ResourceAction{
+			Type:       ResourceVariableGroup,
+			Action:     ActionDelete,
+			Label:      env.Name,
+			ExistingID: env.ID,
+		})
+	}
+
+	// Keys
+	keyResp, err := r.client.KeyStore.GetProjectProjectIDKeys(
+		key_store.NewGetProjectProjectIDKeysParams().WithProjectID(pid), nil)
+	if err != nil {
+		return fmt.Errorf("listing keys: %w", err)
+	}
+	for _, k := range keyResp.GetPayload() {
+		plan.Actions = append(plan.Actions, ResourceAction{
+			Type:       ResourceKey,
+			Action:     ActionDelete,
+			Label:      k.Name,
+			ExistingID: k.ID,
+		})
+	}
+
+	return nil
 }
 
 func (r *Reconciler) reconcileKeys(plan *Plan) error {
@@ -249,7 +358,7 @@ func (r *Reconciler) reconcileKeys(plan *Plan) error {
 	return nil
 }
 
-func (r *Reconciler) reconcileEnvironments(plan *Plan) error {
+func (r *Reconciler) reconcileVariableGroups(plan *Plan) error {
 	params := variable_group.NewGetProjectProjectIDEnvironmentParams()
 	params.ProjectID = r.projectID
 	resp, err := r.client.VariableGroup.GetProjectProjectIDEnvironment(params, nil)
@@ -259,16 +368,16 @@ func (r *Reconciler) reconcileEnvironments(plan *Plan) error {
 
 	existing := resp.GetPayload()
 	for _, e := range existing {
-		r.EnvIDByName[strings.ToLower(e.Name)] = e.ID
+		r.VarGroupIDByName[strings.ToLower(e.Name)] = e.ID
 	}
 
-	for i, entry := range r.config.Environments {
+	for i, entry := range r.config.VariableGroups {
 		existingEnv := findEnvByName(existing, entry.Name)
 
 		if entry.State == "absent" {
 			if existingEnv != nil {
 				plan.Actions = append(plan.Actions, ResourceAction{
-					Type:       ResourceEnvironment,
+					Type:       ResourceVariableGroup,
 					Action:     ActionDelete,
 					Label:      entry.Name,
 					ExistingID: existingEnv.ID,
@@ -280,14 +389,14 @@ func (r *Reconciler) reconcileEnvironments(plan *Plan) error {
 
 		if existingEnv == nil {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:   ResourceEnvironment,
+				Type:   ResourceVariableGroup,
 				Action: ActionCreate,
 				Label:  entry.Name,
 				Index:  i,
 			})
-		} else if envNeedsUpdate(entry, existingEnv) {
+		} else if varGroupNeedsUpdate(entry, existingEnv) {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:       ResourceEnvironment,
+				Type:       ResourceVariableGroup,
 				Action:     ActionUpdate,
 				Label:      entry.Name,
 				ExistingID: existingEnv.ID,
@@ -295,7 +404,7 @@ func (r *Reconciler) reconcileEnvironments(plan *Plan) error {
 			})
 		} else {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:       ResourceEnvironment,
+				Type:       ResourceVariableGroup,
 				Action:     ActionSkip,
 				Label:      entry.Name,
 				ExistingID: existingEnv.ID,
@@ -494,15 +603,17 @@ func keyNeedsUpdate(entry KeyEntry, existing *models.AccessKey) bool {
 	return false
 }
 
-func envNeedsUpdate(entry EnvEntry, existing *models.Environment) bool {
-	if entry.JSON != "" && entry.JSON != existing.JSON {
+func varGroupNeedsUpdate(entry VariableGroupEntry, existing *models.Environment) bool {
+	varsJSON := VarsToJSON(entry.Variables)
+	if varsJSON != "{}" && varsJSON != existing.JSON {
 		return true
 	}
-	if entry.Env != "" && entry.Env != existing.Env {
+	envStr := EnvVarsToJSON(entry.EnvironmentVariables)
+	if envStr != "{}" && envStr != existing.Env {
 		return true
 	}
-	if entry.Password != "" {
-		return true // passwords not returned by API
+	if len(entry.Secrets) > 0 || len(entry.SecretEnvironmentVariables) > 0 {
+		return true // secret values not returned by API, always re-apply
 	}
 	return false
 }
@@ -579,7 +690,7 @@ func (r *Reconciler) templateNeedsUpdate(entry TemplateEntry, existing *models.T
 	if resolvedRepoID != 0 && resolvedRepoID != existing.RepositoryID {
 		return true
 	}
-	resolvedEnvID := r.resolveEnvID(entry.Environment, entry.EnvironmentID)
+	resolvedEnvID := r.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID)
 	if resolvedEnvID != 0 && resolvedEnvID != existing.EnvironmentID {
 		return true
 	}
@@ -612,12 +723,12 @@ func (r *Reconciler) resolveKeyID(name string, explicitID int64) int64 {
 	return 0
 }
 
-func (r *Reconciler) resolveEnvID(name string, explicitID int64) int64 {
+func (r *Reconciler) resolveVarGroupID(name string, explicitID int64) int64 {
 	if explicitID != 0 {
 		return explicitID
 	}
 	if name != "" {
-		if id, ok := r.EnvIDByName[strings.ToLower(name)]; ok {
+		if id, ok := r.VarGroupIDByName[strings.ToLower(name)]; ok {
 			return id
 		}
 	}

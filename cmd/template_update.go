@@ -66,6 +66,8 @@ var templateUpdateCmd = &cobra.Command{
 			AllowOverrideArgsInTask: t.AllowOverrideArgsInTask,
 			StartVersion:            t.StartVersion,
 			Arguments:               t.Arguments,
+			SurveyVars:             []*models.TemplateSurveyVar{},
+			Vaults:                 []*models.TemplateVault{},
 		}
 
 		if len(args) < 2 {

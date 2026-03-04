@@ -2,6 +2,7 @@ package apply
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/style"
 	apiclient "github.com/ramanavelineni/semctl/pkg/semapi/client"
@@ -39,7 +40,7 @@ func (e *Executor) Execute(plan *Plan) int {
 	createOrder := []ResourceType{
 		ResourceProject,
 		ResourceKey,
-		ResourceEnvironment,
+		ResourceVariableGroup,
 		ResourceRepository,
 		ResourceInventory,
 		ResourceTemplate,
@@ -57,14 +58,14 @@ func (e *Executor) Execute(plan *Plan) int {
 		}
 	}
 
-	// Delete order (reverse): templates → inventories → repos → envs → keys
-	// Project never deleted; schedules never deleted
+	// Delete order (reverse): templates → inventories → repos → envs → keys → project
 	deleteOrder := []ResourceType{
 		ResourceTemplate,
 		ResourceInventory,
 		ResourceRepository,
-		ResourceEnvironment,
+		ResourceVariableGroup,
 		ResourceKey,
+		ResourceProject,
 	}
 
 	for _, rt := range deleteOrder {
@@ -87,8 +88,8 @@ func (e *Executor) executeAction(action ResourceAction) error {
 		return e.executeProject(action)
 	case ResourceKey:
 		return e.executeKey(action)
-	case ResourceEnvironment:
-		return e.executeEnvironment(action)
+	case ResourceVariableGroup:
+		return e.executeVariableGroup(action)
 	case ResourceRepository:
 		return e.executeRepository(action)
 	case ResourceInventory:
@@ -103,25 +104,34 @@ func (e *Executor) executeAction(action ResourceAction) error {
 }
 
 func (e *Executor) executeProject(action ResourceAction) error {
-	if action.Action != ActionCreate {
-		return nil
+	switch action.Action {
+	case ActionCreate:
+		req := &models.ProjectRequest{
+			Name: e.config.Project,
+		}
+
+		params := project.NewPostProjectsParams()
+		params.Project = req
+
+		resp, err := e.client.Project.PostProjects(params, nil)
+		if err != nil {
+			return err
+		}
+
+		p := resp.GetPayload()
+		e.recon.SetProjectID(p.ID)
+		style.Success(fmt.Sprintf("Created project %q (ID: %d)", p.Name, p.ID))
+
+	case ActionDelete:
+		params := project.NewDeleteProjectProjectIDParams()
+		params.ProjectID = action.ExistingID
+
+		_, err := e.client.Project.DeleteProjectProjectID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Deleted project %q (ID: %d)", action.Label, action.ExistingID))
 	}
-
-	req := &models.ProjectRequest{
-		Name: e.config.Project,
-	}
-
-	params := project.NewPostProjectsParams()
-	params.Project = req
-
-	resp, err := e.client.Project.PostProjects(params, nil)
-	if err != nil {
-		return err
-	}
-
-	p := resp.GetPayload()
-	e.recon.SetProjectID(p.ID)
-	style.Success(fmt.Sprintf("Created project %q (ID: %d)", p.Name, p.ID))
 	return nil
 }
 
@@ -206,18 +216,18 @@ func (e *Executor) applyKeySecrets(req *models.AccessKeyRequest, entry KeyEntry)
 	}
 }
 
-func (e *Executor) executeEnvironment(action ResourceAction) error {
-	entry := e.config.Environments[action.Index]
+func (e *Executor) executeVariableGroup(action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	switch action.Action {
 	case ActionCreate:
+		entry := e.config.VariableGroups[action.Index]
 		req := &models.EnvironmentRequest{
 			ProjectID: pid,
 			Name:      entry.Name,
-			JSON:      entry.JSON,
-			Env:       entry.Env,
-			Password:  entry.Password,
+			JSON:    VarsToJSON(entry.Variables),
+			Env:     EnvVarsToJSON(entry.EnvironmentVariables),
+			Secrets: buildAllSecretRequests(entry.Secrets, entry.SecretEnvironmentVariables, "create"),
 		}
 
 		params := variable_group.NewPostProjectProjectIDEnvironmentParams()
@@ -230,29 +240,41 @@ func (e *Executor) executeEnvironment(action ResourceAction) error {
 		}
 
 		env := resp.GetPayload()
-		e.recon.EnvIDByName[env.Name] = env.ID
-		style.Success(fmt.Sprintf("Created environment %q (ID: %d)", env.Name, env.ID))
+		e.recon.VarGroupIDByName[env.Name] = env.ID
+		style.Success(fmt.Sprintf("Created variable group %q (ID: %d)", env.Name, env.ID))
 
 	case ActionUpdate:
+		entry := e.config.VariableGroups[action.Index]
+
+		// Fetch existing to get current secret IDs
+		getParams := variable_group.NewGetProjectProjectIDEnvironmentEnvironmentIDParams()
+		getParams.ProjectID = pid
+		getParams.EnvironmentID = action.ExistingID
+		getResp, err := e.client.VariableGroup.GetProjectProjectIDEnvironmentEnvironmentID(getParams, nil)
+		if err != nil {
+			return fmt.Errorf("fetching existing variable group: %w", err)
+		}
+		existing := getResp.GetPayload()
+
 		req := &models.EnvironmentRequest{
 			ID:        action.ExistingID,
 			ProjectID: pid,
 			Name:      entry.Name,
-			JSON:      entry.JSON,
-			Env:       entry.Env,
-			Password:  entry.Password,
+			JSON:    VarsToJSON(entry.Variables),
+			Env:     EnvVarsToJSON(entry.EnvironmentVariables),
+			Secrets: buildAllSecretUpdateRequests(entry.Secrets, entry.SecretEnvironmentVariables, existing.Secrets),
 		}
 
-		params := variable_group.NewPutProjectProjectIDEnvironmentEnvironmentIDParams()
-		params.ProjectID = pid
-		params.EnvironmentID = action.ExistingID
-		params.Environment = req
+		putParams := variable_group.NewPutProjectProjectIDEnvironmentEnvironmentIDParams()
+		putParams.ProjectID = pid
+		putParams.EnvironmentID = action.ExistingID
+		putParams.Environment = req
 
-		_, err := e.client.VariableGroup.PutProjectProjectIDEnvironmentEnvironmentID(params, nil)
+		_, err = e.client.VariableGroup.PutProjectProjectIDEnvironmentEnvironmentID(putParams, nil)
 		if err != nil {
 			return err
 		}
-		style.Success(fmt.Sprintf("Updated environment %q (ID: %d)", entry.Name, action.ExistingID))
+		style.Success(fmt.Sprintf("Updated variable group %q (ID: %d)", entry.Name, action.ExistingID))
 
 	case ActionDelete:
 		params := variable_group.NewDeleteProjectProjectIDEnvironmentEnvironmentIDParams()
@@ -263,7 +285,7 @@ func (e *Executor) executeEnvironment(action ResourceAction) error {
 		if err != nil {
 			return err
 		}
-		style.Success(fmt.Sprintf("Deleted environment %q (ID: %d)", entry.Name, action.ExistingID))
+		style.Success(fmt.Sprintf("Deleted variable group %q (ID: %d)", action.Label, action.ExistingID))
 	}
 	return nil
 }
@@ -404,7 +426,7 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 	entry := e.config.Templates[action.Index]
 	pid := e.recon.ProjectID()
 	repoID := e.recon.resolveRepoID(entry.Repository, entry.RepositoryID)
-	envID := e.recon.resolveEnvID(entry.Environment, entry.EnvironmentID)
+	envID := e.recon.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID)
 	invID := e.recon.resolveInventoryID(entry.Inventory, entry.InventoryID)
 	buildTplID := e.recon.resolveTemplateID(entry.BuildTemplate, entry.BuildTemplateID)
 
@@ -428,6 +450,8 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			InventoryID:             invID,
 			BuildTemplateID:         buildTplID,
 			ViewID:                  entry.ViewID,
+			SurveyVars:             []*models.TemplateSurveyVar{},
+			Vaults:                 []*models.TemplateVault{},
 		}
 
 		params := template.NewPostProjectProjectIDTemplatesParams()
@@ -463,6 +487,8 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			InventoryID:             invID,
 			BuildTemplateID:         buildTplID,
 			ViewID:                  entry.ViewID,
+			SurveyVars:             []*models.TemplateSurveyVar{},
+			Vaults:                 []*models.TemplateVault{},
 		}
 
 		params := template.NewPutProjectProjectIDTemplatesTemplateIDParams()
@@ -524,4 +550,81 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 	s := resp.GetPayload()
 	style.Success(fmt.Sprintf("Created schedule %q (ID: %d)", s.Name, s.ID))
 	return nil
+}
+
+// buildAllSecretRequests combines both secret types (var + env) into a single slice for creation.
+func buildAllSecretRequests(secrets, secretEnvVars map[string]string, operation string) []*models.EnvironmentSecretRequest {
+	var result []*models.EnvironmentSecretRequest
+	for name, value := range secrets {
+		result = append(result, &models.EnvironmentSecretRequest{
+			Name:      name,
+			Secret:    value,
+			Type:      "var",
+			Operation: operation,
+		})
+	}
+	for name, value := range secretEnvVars {
+		result = append(result, &models.EnvironmentSecretRequest{
+			Name:      name,
+			Secret:    value,
+			Type:      "env",
+			Operation: operation,
+		})
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// buildAllSecretUpdateRequests builds secret requests for an update, matching existing secrets by name.
+// Existing secrets get "update" with their ID; new secrets get "create".
+func buildAllSecretUpdateRequests(secrets, secretEnvVars map[string]string, existing []*models.EnvironmentSecret) []*models.EnvironmentSecretRequest {
+	if len(secrets) == 0 && len(secretEnvVars) == 0 {
+		return nil
+	}
+
+	existingByName := make(map[string]*models.EnvironmentSecret)
+	for _, s := range existing {
+		existingByName[strings.ToLower(s.Name)] = s
+	}
+
+	var result []*models.EnvironmentSecretRequest
+	for name, value := range secrets {
+		if es, ok := existingByName[strings.ToLower(name)]; ok {
+			result = append(result, &models.EnvironmentSecretRequest{
+				ID:        es.ID,
+				Name:      name,
+				Secret:    value,
+				Type:      "var",
+				Operation: "update",
+			})
+		} else {
+			result = append(result, &models.EnvironmentSecretRequest{
+				Name:      name,
+				Secret:    value,
+				Type:      "var",
+				Operation: "create",
+			})
+		}
+	}
+	for name, value := range secretEnvVars {
+		if es, ok := existingByName[strings.ToLower(name)]; ok {
+			result = append(result, &models.EnvironmentSecretRequest{
+				ID:        es.ID,
+				Name:      name,
+				Secret:    value,
+				Type:      "env",
+				Operation: "update",
+			})
+		} else {
+			result = append(result, &models.EnvironmentSecretRequest{
+				Name:      name,
+				Secret:    value,
+				Type:      "env",
+				Operation: "create",
+			})
+		}
+	}
+	return result
 }
