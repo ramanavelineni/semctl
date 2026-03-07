@@ -137,6 +137,15 @@ Environment variables with `SEMCTL_` prefix are also supported.
 -y, --yes              auto-confirm prompts
 ```
 
+## Compatibility
+
+| semctl | Semaphore UI | Notes |
+|--------|--------------|-------|
+| v0.1.0 | v2.16.51     | Initial release |
+| v0.2.0 | v2.16.51     | Declarative apply, variable groups, validate |
+
+The API client is generated from the Semaphore UI OpenAPI spec. Each semctl release is tested against the listed Semaphore UI version. Older or newer versions of Semaphore UI may work but are not guaranteed.
+
 ## Building from Source
 
 ```bash
