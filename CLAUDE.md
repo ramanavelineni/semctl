@@ -24,6 +24,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 ## API Client Gotchas
 - `getProjectID(cmd)` returns `int32` but API params expect `int64` — always cast with `int64(pid)`
 - Environment APIs use `apiClient.VariableGroup` (not a separate Environment client)
+- Semaphore 2.18+ omits `secrets` from the environment LIST response — fetch by ID to get them
 - Token APIs use `apiClient.Authentication` (GetUserTokens, PostUserTokens, DeleteUserTokensAPITokenID)
 - Event APIs use `apiClient.Operations` (GetEvents, GetEventsLast)
 - Key resource has no GET-by-ID endpoint — fetch from list and filter by ID

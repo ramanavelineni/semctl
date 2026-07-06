@@ -203,6 +203,8 @@ Precedence: command-line flags > environment variables > config file.
 
 The API client is generated from the Semaphore UI OpenAPI spec. Each semctl release is tested against the listed Semaphore UI version. Older or newer versions of Semaphore UI may work but are not guaranteed.
 
+> **Upgrading Semaphore UI to 2.18?** BoltDB support was removed (replaced by sqlite) — the official Docker image fails to start with `SEMAPHORE_DB_DIALECT=bolt`. Back up your `database.boltdb` and plan the migration before upgrading a 2.16 server.
+
 ## Building from Source
 
 ```bash
