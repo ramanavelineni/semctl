@@ -56,6 +56,7 @@ history.
 | `inventory` | Manage host inventories |
 | `repo` | Manage Git repositories |
 | `env` | Manage variable groups (environments) |
+| `runner` | Manage task runners — global or per-project (Semaphore 2.18+) |
 | `apply` | Apply declarative configuration files |
 | `export` | Export project state to YAML/JSON |
 | `validate` | Validate configuration files offline |

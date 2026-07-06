@@ -16,6 +16,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Project-scoped commands: `getProjectID(cmd)` — `--project` flag (numeric ID or name, resolved case-insensitively) → `defaults.project_id` config → error
 - Commands skipped in PersistentPreRunE: login, logout, completion, version, __complete (session flags like --timeout are processed before the skip)
 - Interactive mode: `shouldAutoInteractive(cmd, inputsMissing)` pattern
+- Runner commands are GLOBAL by default; only an explicit `--project` flag selects project scope (`runnerScope(cmd)` — config defaults.project_id deliberately ignored)
 - Update commands use `field=value` positional args pattern: fetch current resource, apply overrides, PUT back
 - Confirmations use `confirmAction(cmd, prompt)` (cmd/confirm.go): `--yes` skips; non-TTY stdin without `--yes` errors; declining returns `errCancelled` → non-zero exit. Never inline `[y/N]` prompts
 - `task run --wait/--follow` polls status until success/error/stopped; non-success = non-zero exit
