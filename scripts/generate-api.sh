@@ -33,6 +33,10 @@ mkdir -p "$(dirname "$SPEC_FILE")"
 curl -sf "http://localhost:$SEM_PORT/swagger/api-docs.yml" -o "$SPEC_FILE"
 echo "Spec saved to $SPEC_FILE"
 
+# Step 3b: Patch in endpoints the server implements but doesn't document
+# (e.g. GET /project/{id}/schedules — needed for schedule reconciliation)
+python3 "$SCRIPT_DIR/patch-spec.py" "$SPEC_FILE"
+
 # Step 4: Stop Semaphore (no longer needed)
 echo "Stopping Semaphore..."
 docker compose -f "$COMPOSE_FILE" down -v
