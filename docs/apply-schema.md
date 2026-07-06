@@ -35,7 +35,7 @@ Rules:
 | `repositories` | [`[]RepoEntry`](#repoentry) | No | List of Git repositories. |
 | `inventories` | [`[]InventoryEntry`](#inventoryentry) | No | List of inventories (static, file-based, or Terraform). |
 | `templates` | [`[]TemplateEntry`](#templateentry) | No | List of task templates. |
-| `schedules` | [`[]ScheduleEntry`](#scheduleentry) | No | List of cron schedules for templates. Schedules are create-only (no update or delete). |
+| `schedules` | [`[]ScheduleEntry`](#scheduleentry) | No | List of cron schedules for templates, reconciled by name. |
 
 ### Minimal example
 
@@ -361,17 +361,18 @@ templates:
 
 ## ScheduleEntry
 
-Represents a cron schedule attached to a template. Schedules are **create-only** -- there is no list API, so semctl cannot detect or update existing schedules.
+Represents a cron schedule attached to a template. Schedules are reconciled by name like every other resource: matched schedules are updated in place, missing ones are created, and `state: absent` deletes them.
 
-> **Warning:** because schedules cannot be reconciled, **every `semctl apply` run creates them again**. Re-applying a file with schedules duplicates them (and the scheduled tasks will run once per duplicate). Pass `--skip-schedules` when re-applying a file whose schedules already exist.
+> **Note:** Semaphore does not enforce unique schedule names, and semctl versions before v0.4.0 could not reconcile schedules (each apply created a new copy). When several schedules share a name, semctl manages the first match and the plan output flags the duplicates. To clean up duplicates: set `state: absent` (deletes **all** schedules with that name), apply, then restore the entry and apply again.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `string` | Yes | Name of the schedule. |
-| `cron_format` | `string` | Yes | Cron expression (e.g., `"0 2 * * *"` for daily at 2 AM). |
-| `template` | `string` | Conditional | Name of the template to schedule. Either `template` or `template_id` is required. |
-| `template_id` | `integer` | Conditional | Explicit Semaphore template ID. Takes precedence over `template`. Either `template` or `template_id` is required. |
-| `active` | `boolean` | No | Whether the schedule is active. Default: `true`. |
+| `name` | `string` | Yes | Name of the schedule. Matching against existing schedules is case-insensitive. |
+| `state` | `string` | No | Set to `"absent"` to delete all schedules with this name. |
+| `cron_format` | `string` | Yes* | Cron expression (e.g., `"0 2 * * *"` for daily at 2 AM). *Not required when `state: absent`. |
+| `template` | `string` | Conditional | Name of the template to schedule. Either `template` or `template_id` is required (unless `state: absent`). |
+| `template_id` | `integer` | Conditional | Explicit Semaphore template ID. Takes precedence over `template`. |
+| `active` | `boolean` | No | Whether the schedule is active. Omitted: keeps the existing value on update, `true` on create. |
 
 ### Example
 
@@ -405,12 +406,13 @@ Resources are processed in a specific dependency order:
 
 ### Delete order (reverse)
 
-1. Templates
-2. Inventories
-3. Repositories
-4. Variable Groups
-5. Keys
-6. Project
+1. Schedules
+2. Templates
+3. Inventories
+4. Repositories
+5. Variable Groups
+6. Keys
+7. Project
 
 This ensures that dependent resources are created before the resources that reference them, and deleted after.
 

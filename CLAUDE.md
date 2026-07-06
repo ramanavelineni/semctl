@@ -28,7 +28,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Event APIs use `apiClient.Operations` (GetEvents, GetEventsLast)
 - Key resource has no GET-by-ID endpoint — fetch from list and filter by ID
 - APIToken.ID is a `string` (not int64 like other resource IDs)
-- Schedule API has no list endpoint — only get/create/update/delete by ID
+- Schedule list endpoint (GET /project/{id}/schedules) is implemented by the server but missing from the official spec — scripts/patch-spec.py adds it (and Schedule.tpl_name) before client generation; the list returns ScheduleWithTpl objects
 
 ## Commit Style (Mandatory)
 - Use [Conventional Commits](https://www.conventionalcommits.org): `type(scope): description`
@@ -47,7 +47,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Env expansion is strict `${VAR}`-only (`expandEnv`): unset var = error in apply, warning in validate (`ParseFileOffline`); `$${VAR}` escapes; bare `$WORD` untouched
 - Updates MERGE over existing state (`mergeStr`/`mergeID`/`mergeBool` + `Reconciler.Existing*ByID` maps): empty config field = keep server value; template bools are `*bool` (nil = keep); SurveyVars/Vaults preserved from existing on update
 - Validate rejects the literal `<set-me>` export placeholder (`ExportPlaceholder`)
-- Schedules are create-only (API has no list endpoint) — every apply re-creates them; `--skip-schedules` drops them from the config
+- Schedules reconcile by name like other resources (duplicate names possible server-side: first match is managed, `state: absent` deletes ALL matches); `--skip-schedules` leaves them unmanaged
 - Schema reference: `docs/apply-schema.md`
 
 ## Build
