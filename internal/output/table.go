@@ -4,8 +4,8 @@ import (
 	"os"
 
 	"github.com/olekukonko/tablewriter"
-	tw "github.com/olekukonko/tablewriter/tw"
 	"github.com/olekukonko/tablewriter/renderer"
+	tw "github.com/olekukonko/tablewriter/tw"
 )
 
 // PrintTable outputs data as a formatted table to stdout.
