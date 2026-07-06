@@ -20,11 +20,11 @@ type InfoType struct {
 	// auth methods
 	AuthMethods any `json:"auth_methods,omitempty"`
 
+	// features
+	Features any `json:"features,omitempty"`
+
 	// git client
 	GitClient string `json:"git_client,omitempty"`
-
-	// premium features
-	PremiumFeatures any `json:"premium_features,omitempty"`
 
 	// schedule timezone
 	ScheduleTimezone string `json:"schedule_timezone,omitempty"`

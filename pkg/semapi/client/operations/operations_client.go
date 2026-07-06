@@ -121,12 +121,6 @@ type ClientService interface {
 	// GetWsContext websocket handler.
 	GetWsContext(ctx context.Context, params *GetWsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetWsOK, error)
 
-	// PostDebugGc garbage collector.
-	PostDebugGc(params *PostDebugGcParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostDebugGcNoContent, error)
-
-	// PostDebugGcContext garbage collector.
-	PostDebugGcContext(ctx context.Context, params *PostDebugGcParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostDebugGcNoContent, error)
-
 	SetTransport(transport runtime.ContextualTransport)
 }
 
@@ -508,73 +502,6 @@ func (a *Client) GetWsContext(ctx context.Context, params *GetWsParams, authInfo
 	//
 	// safeguard: normally, in the absence of a default response, unknown success responses return an error above: so this is a codegen issue
 	msg := fmt.Sprintf("unexpected success response for GetWs: API contract not enforced by server. Client expected to get an error, but got: %T", result)
-	panic(msg)
-}
-
-// PostDebugGc garbages collector.
-//
-// Run the garbage collector.
-//
-// This method does not support injected context.
-// However, timeout and opentracing contexts are honored whenever enabled.
-//
-// If you need to pass a specific context, use [Client.PostDebugGcContext] instead.
-func (a *Client) PostDebugGc(params *PostDebugGcParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostDebugGcNoContent, error) {
-	var ctx context.Context
-	if params.inner.ctx != nil {
-		ctx = params.inner.ctx
-	} else {
-		ctx = context.Background()
-	}
-
-	return a.PostDebugGcContext(ctx, params, authInfo, opts...)
-}
-
-// PostDebugGcContext garbages collector.
-//
-// Run the garbage collector.
-//
-// Do not use the deprecated [PostDebugGcParams.Context] with this method: it would be ignored.
-func (a *Client) PostDebugGcContext(ctx context.Context, params *PostDebugGcParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostDebugGcNoContent, error) {
-	// NOTE: parameters are not validated before sending
-	if params == nil {
-		params = NewPostDebugGcParams()
-	}
-
-	op := &runtime.ClientOperation{
-		ID:                 "PostDebugGc",
-		Method:             "POST",
-		PathPattern:        "/debug/gc",
-		ProducesMediaTypes: []string{"application/json", "text/plain; charset=utf-8"},
-		ConsumesMediaTypes: []string{"application/json"},
-		Schemes:            []string{"http", "https"},
-		Params:             params,
-		Reader:             &PostDebugGcReader{formats: a.formats},
-		AuthInfo:           authInfo,
-		Client:             params.HTTPClient,
-	}
-
-	for _, opt := range opts {
-		opt(op)
-	}
-
-	result, err := a.transport.SubmitContext(ctx, op)
-	if err != nil {
-		return nil, err
-	}
-
-	// only one success response has to be checked
-	success, ok := result.(*PostDebugGcNoContent)
-	if ok {
-		return success, nil
-	}
-
-	// unexpected success response.
-
-	// no default response is defined.
-	//
-	// safeguard: normally, in the absence of a default response, unknown success responses return an error above: so this is a codegen issue
-	msg := fmt.Sprintf("unexpected success response for PostDebugGc: API contract not enforced by server. Client expected to get an error, but got: %T", result)
 	panic(msg)
 }
 

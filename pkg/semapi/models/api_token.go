@@ -26,6 +26,9 @@ type APIToken struct {
 	// id
 	ID string `json:"id,omitempty"`
 
+	// name
+	Name string `json:"name,omitempty"`
+
 	// user id
 	// Minimum: 1
 	UserID int64 `json:"user_id,omitempty"`

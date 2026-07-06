@@ -17,15 +17,31 @@ import (
 // swagger:model IntegrationRequest
 type IntegrationRequest struct {
 
+	// auth header
+	AuthHeader string `json:"auth_header,omitempty"`
+
+	// auth method
+	// Example: none
+	AuthMethod string `json:"auth_method,omitempty"`
+
+	// auth secret id
+	AuthSecretID *int64 `json:"auth_secret_id,omitempty"`
+
+	// id
+	ID int64 `json:"id,omitempty"`
+
 	// name
 	// Example: deploy
 	Name string `json:"name,omitempty"`
 
-	// params
-	Params *TaskPrams `json:"params,omitempty"`
-
 	// project id
 	ProjectID int64 `json:"project_id,omitempty"`
+
+	// searchable
+	Searchable bool `json:"searchable,omitempty"`
+
+	// task params
+	TaskParams *TaskPrams `json:"task_params,omitempty"`
 
 	// template id
 	TemplateID int64 `json:"template_id,omitempty"`
@@ -35,7 +51,7 @@ type IntegrationRequest struct {
 func (m *IntegrationRequest) Validate(formats strfmt.Registry) error {
 	var res []error
 
-	if err := m.validateParams(formats); err != nil {
+	if err := m.validateTaskParams(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -45,20 +61,20 @@ func (m *IntegrationRequest) Validate(formats strfmt.Registry) error {
 	return nil
 }
 
-func (m *IntegrationRequest) validateParams(formats strfmt.Registry) error {
-	if typeutils.IsZero(m.Params) { // not required
+func (m *IntegrationRequest) validateTaskParams(formats strfmt.Registry) error {
+	if typeutils.IsZero(m.TaskParams) { // not required
 		return nil
 	}
 
-	if m.Params != nil {
-		if err := m.Params.Validate(formats); err != nil {
+	if m.TaskParams != nil {
+		if err := m.TaskParams.Validate(formats); err != nil {
 			ve := new(errors.Validation)
 			if stderrors.As(err, &ve) {
-				return ve.ValidateName("params")
+				return ve.ValidateName("task_params")
 			}
 			ce := new(errors.CompositeError)
 			if stderrors.As(err, &ce) {
-				return ce.ValidateName("params")
+				return ce.ValidateName("task_params")
 			}
 
 			return err
@@ -72,7 +88,7 @@ func (m *IntegrationRequest) validateParams(formats strfmt.Registry) error {
 func (m *IntegrationRequest) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
-	if err := m.contextValidateParams(ctx, formats); err != nil {
+	if err := m.contextValidateTaskParams(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -82,22 +98,22 @@ func (m *IntegrationRequest) ContextValidate(ctx context.Context, formats strfmt
 	return nil
 }
 
-func (m *IntegrationRequest) contextValidateParams(ctx context.Context, formats strfmt.Registry) error {
+func (m *IntegrationRequest) contextValidateTaskParams(ctx context.Context, formats strfmt.Registry) error {
 
-	if m.Params != nil {
+	if m.TaskParams != nil {
 
-		if typeutils.IsZero(m.Params) { // not required
+		if typeutils.IsZero(m.TaskParams) { // not required
 			return nil
 		}
 
-		if err := m.Params.ContextValidate(ctx, formats); err != nil {
+		if err := m.TaskParams.ContextValidate(ctx, formats); err != nil {
 			ve := new(errors.Validation)
 			if stderrors.As(err, &ve) {
-				return ve.ValidateName("params")
+				return ve.ValidateName("task_params")
 			}
 			ce := new(errors.CompositeError)
 			if stderrors.As(err, &ce) {
-				return ce.ValidateName("params")
+				return ce.ValidateName("task_params")
 			}
 
 			return err

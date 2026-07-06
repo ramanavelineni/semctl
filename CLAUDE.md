@@ -24,6 +24,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 ## API Client Gotchas
 - `getProjectID(cmd)` returns `int32` but API params expect `int64` — always cast with `int64(pid)`
 - Environment APIs use `apiClient.VariableGroup` (not a separate Environment client)
+- Semaphore 2.18+ omits `secrets` from the environment LIST response — fetch by ID to get them
 - Token APIs use `apiClient.Authentication` (GetUserTokens, PostUserTokens, DeleteUserTokensAPITokenID)
 - Event APIs use `apiClient.Operations` (GetEvents, GetEventsLast)
 - Key resource has no GET-by-ID endpoint — fetch from list and filter by ID
@@ -48,6 +49,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Updates MERGE over existing state (`mergeStr`/`mergeID`/`mergeBool` + `Reconciler.Existing*ByID` maps): empty config field = keep server value; template bools are `*bool` (nil = keep); SurveyVars/Vaults preserved from existing on update
 - Validate rejects the literal `<set-me>` export placeholder (`ExportPlaceholder`)
 - Schedules reconcile by name like other resources (duplicate names possible server-side: first match is managed, `state: absent` deletes ALL matches); `--skip-schedules` leaves them unmanaged
+- Template updates must preserve fields apply doesn't manage: SurveyVars, Vaults, EnvironmentIds, TaskParams — copy from the existing template or the server wipes them
 - Schema reference: `docs/apply-schema.md`
 
 ## Build

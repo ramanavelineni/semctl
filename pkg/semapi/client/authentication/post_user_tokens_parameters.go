@@ -61,6 +61,10 @@ PostUserTokensParams contains all the parameters to send to the API endpoint
 	Typically these are written to a http.Request.
 */
 type PostUserTokensParams struct {
+
+	// Body.
+	Body PostUserTokensBody
+
 	HTTPClient *http.Client
 
 	inner innerParams
@@ -118,12 +122,26 @@ func (o *PostUserTokensParams) SetHTTPClient(client *http.Client) {
 	o.HTTPClient = client
 }
 
+// WithBody adds the body to the post user tokens params.
+func (o *PostUserTokensParams) WithBody(body PostUserTokensBody) *PostUserTokensParams {
+	o.SetBody(body)
+	return o
+}
+
+// SetBody adds the body to the post user tokens params.
+func (o *PostUserTokensParams) SetBody(body PostUserTokensBody) {
+	o.Body = body
+}
+
 // WriteToRequest writes these params to a [runtime.ClientRequest].
 func (o *PostUserTokensParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
 	if err := r.SetTimeout(o.inner.timeout); err != nil {
 		return err
 	}
 	var res []error
+	if err := r.SetBodyParam(o.Body); err != nil {
+		return err
+	}
 
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)

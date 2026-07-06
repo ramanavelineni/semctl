@@ -183,7 +183,23 @@ func (e *Exporter) fetchEnvironments() ([]*models.Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resp.GetPayload(), nil
+	envs := resp.GetPayload()
+
+	// Semaphore 2.18+ omits secrets from the list response; only the
+	// get-by-ID endpoint includes them. Enrich each environment so exports
+	// keep emitting <set-me> placeholders for every secret.
+	for i, env := range envs {
+		getParams := variable_group.NewGetProjectProjectIDEnvironmentEnvironmentIDParams()
+		getParams.ProjectID = e.projectID
+		getParams.EnvironmentID = env.ID
+		getResp, err := e.client.VariableGroup.GetProjectProjectIDEnvironmentEnvironmentID(getParams, nil)
+		if err != nil {
+			return nil, fmt.Errorf("fetching variable group %q: %w", env.Name, err)
+		}
+		envs[i] = getResp.GetPayload()
+	}
+
+	return envs, nil
 }
 
 func (e *Exporter) fetchRepositories() ([]*models.Repository, error) {
