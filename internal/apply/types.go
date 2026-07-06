@@ -129,6 +129,7 @@ type TemplateEntry struct {
 // ScheduleEntry represents a schedule in the config file.
 type ScheduleEntry struct {
 	Name       string `json:"name" yaml:"name"`
+	State      string `json:"state,omitempty" yaml:"state,omitempty"`
 	CronFormat string `json:"cron_format,omitempty" yaml:"cron_format,omitempty"`
 	Template   string `json:"template,omitempty" yaml:"template,omitempty"`
 	TemplateID int64  `json:"template_id,omitempty" yaml:"template_id,omitempty"`
@@ -359,6 +360,9 @@ func (c *ApplyConfig) Validate() error {
 	for i, s := range c.Schedules {
 		if s.Name == "" {
 			return fmt.Errorf("schedules[%d]: name is required", i)
+		}
+		if s.State == "absent" {
+			continue
 		}
 		if s.CronFormat == "" {
 			return fmt.Errorf("schedules[%d] %q: cron_format is required", i, s.Name)

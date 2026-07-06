@@ -154,6 +154,78 @@ func TestRepoNeedsUpdate(t *testing.T) {
 	}
 }
 
+func TestScheduleNeedsUpdate(t *testing.T) {
+	r := &Reconciler{
+		TemplateIDByName: map[string]int64{"deploy": 40},
+	}
+
+	tests := []struct {
+		name     string
+		entry    ScheduleEntry
+		existing *models.Schedule
+		want     bool
+	}{
+		{
+			name:     "no changes",
+			entry:    ScheduleEntry{Name: "s", CronFormat: "0 * * * *", Template: "Deploy"},
+			existing: &models.Schedule{Name: "s", CronFormat: "0 * * * *", TemplateID: 40, Active: true},
+			want:     false,
+		},
+		{
+			name:     "cron changed",
+			entry:    ScheduleEntry{Name: "s", CronFormat: "30 * * * *", Template: "Deploy"},
+			existing: &models.Schedule{Name: "s", CronFormat: "0 * * * *", TemplateID: 40},
+			want:     true,
+		},
+		{
+			name:     "template changed",
+			entry:    ScheduleEntry{Name: "s", CronFormat: "0 * * * *", TemplateID: 99},
+			existing: &models.Schedule{Name: "s", CronFormat: "0 * * * *", TemplateID: 40},
+			want:     true,
+		},
+		{
+			name:     "active explicit false differs from existing true",
+			entry:    ScheduleEntry{Name: "s", CronFormat: "0 * * * *", Template: "Deploy", Active: boolPtr(false)},
+			existing: &models.Schedule{Name: "s", CronFormat: "0 * * * *", TemplateID: 40, Active: true},
+			want:     true,
+		},
+		{
+			name:     "active omitted keeps existing false",
+			entry:    ScheduleEntry{Name: "s", CronFormat: "0 * * * *", Template: "Deploy"},
+			existing: &models.Schedule{Name: "s", CronFormat: "0 * * * *", TemplateID: 40, Active: false},
+			want:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := r.scheduleNeedsUpdate(tc.entry, tc.existing); got != tc.want {
+				t.Errorf("scheduleNeedsUpdate() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindSchedulesByName(t *testing.T) {
+	schedules := []*models.Schedule{
+		{ID: 1, Name: "Nightly"},
+		{ID: 2, Name: "nightly"}, // duplicate from the pre-reconciliation era
+		{ID: 3, Name: "Weekly"},
+	}
+
+	matches := findSchedulesByName(schedules, "NIGHTLY")
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 case-insensitive matches, got %d", len(matches))
+	}
+	if matches[0].ID != 1 || matches[1].ID != 2 {
+		t.Errorf("matches = [%d, %d], want [1, 2]", matches[0].ID, matches[1].ID)
+	}
+
+	if got := findSchedulesByName(schedules, "missing"); got != nil {
+		t.Errorf("expected nil for no match, got %v", got)
+	}
+}
+
 func TestTemplateNeedsUpdate(t *testing.T) {
 	r := &Reconciler{
 		RepoIDByName:      map[string]int64{"main repo": 10},
