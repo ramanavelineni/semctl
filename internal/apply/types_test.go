@@ -3,6 +3,7 @@ package apply
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -129,6 +130,77 @@ keys:
 	}
 }
 
+func TestParseFileUndefinedEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yaml")
+	content := `
+project: "Test"
+keys:
+  - name: "SSH Key"
+    type: ssh
+    ssh:
+      private_key: "${TEST_SEMCTL_DEFINITELY_UNSET_VAR}"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error for undefined environment variable")
+	}
+	if !strings.Contains(err.Error(), "TEST_SEMCTL_DEFINITELY_UNSET_VAR") {
+		t.Errorf("error should name the missing variable, got: %v", err)
+	}
+
+	// Offline parsing tolerates it but reports the name
+	cfg, missing, err := ParseFileOffline(path)
+	if err != nil {
+		t.Fatalf("ParseFileOffline: %v", err)
+	}
+	if len(missing) != 1 || missing[0] != "TEST_SEMCTL_DEFINITELY_UNSET_VAR" {
+		t.Errorf("missing = %v, want [TEST_SEMCTL_DEFINITELY_UNSET_VAR]", missing)
+	}
+	if cfg.Keys[0].SSH.PrivateKey != "" {
+		t.Errorf("undefined var should expand to empty, got %q", cfg.Keys[0].SSH.PrivateKey)
+	}
+}
+
+func TestExpandEnvEscapeAndBareDollar(t *testing.T) {
+	t.Setenv("TEST_SEMCTL_SET", "value")
+
+	out, missing := expandEnv("a=${TEST_SEMCTL_SET} b=$${TEST_SEMCTL_SET} c=$bare d=$5.00")
+	if len(missing) != 0 {
+		t.Fatalf("unexpected missing vars: %v", missing)
+	}
+	want := "a=value b=${TEST_SEMCTL_SET} c=$bare d=$5.00"
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+}
+
+func TestValidateRejectsExportPlaceholder(t *testing.T) {
+	cfg := &ApplyConfig{
+		Project: "Test",
+		Keys: []KeyEntry{
+			{Name: "k", Type: "ssh", SSH: &SSHKeyData{PrivateKey: ExportPlaceholder}},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for <set-me> in key private_key")
+	}
+
+	cfg = &ApplyConfig{
+		Project: "Test",
+		VariableGroups: []VariableGroupEntry{
+			{Name: "vg", Secrets: map[string]string{"token": ExportPlaceholder}},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for <set-me> in variable group secret")
+	}
+}
+
 func TestParseFileBadExtension(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
@@ -252,13 +324,13 @@ func TestValidateScheduleRequiresTemplate(t *testing.T) {
 
 func TestValidateValid(t *testing.T) {
 	cfg := &ApplyConfig{
-		Project: "Test",
-		Keys:    []KeyEntry{{Name: "Key1", Type: "none"}},
+		Project:        "Test",
+		Keys:           []KeyEntry{{Name: "Key1", Type: "none"}},
 		VariableGroups: []VariableGroupEntry{{Name: "vg1"}},
-		Repositories: []RepoEntry{{Name: "Repo1", GitURL: "git@github.com:org/repo.git"}},
-		Inventories:  []InventoryEntry{{Name: "Inv1", Type: "static"}},
-		Templates:    []TemplateEntry{{Name: "Tpl1"}},
-		Schedules:    []ScheduleEntry{{Name: "Sched1", CronFormat: "* * * * *", Template: "Tpl1"}},
+		Repositories:   []RepoEntry{{Name: "Repo1", GitURL: "git@github.com:org/repo.git"}},
+		Inventories:    []InventoryEntry{{Name: "Inv1", Type: "static"}},
+		Templates:      []TemplateEntry{{Name: "Tpl1"}},
+		Schedules:      []ScheduleEntry{{Name: "Sched1", CronFormat: "* * * * *", Template: "Tpl1"}},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("unexpected validation error: %v", err)

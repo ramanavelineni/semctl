@@ -51,13 +51,13 @@ func (a Action) String() string {
 type ResourceType string
 
 const (
-	ResourceProject     ResourceType = "project"
-	ResourceKey         ResourceType = "keys"
+	ResourceProject       ResourceType = "project"
+	ResourceKey           ResourceType = "keys"
 	ResourceVariableGroup ResourceType = "variable_groups"
-	ResourceRepository  ResourceType = "repositories"
-	ResourceInventory   ResourceType = "inventories"
-	ResourceTemplate    ResourceType = "templates"
-	ResourceSchedule    ResourceType = "schedules"
+	ResourceRepository    ResourceType = "repositories"
+	ResourceInventory     ResourceType = "inventories"
+	ResourceTemplate      ResourceType = "templates"
+	ResourceSchedule      ResourceType = "schedules"
 )
 
 // ResourceAction describes a planned action for a single resource.

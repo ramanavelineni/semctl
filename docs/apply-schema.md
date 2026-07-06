@@ -6,7 +6,7 @@ Configuration files can be written in YAML (`.yaml`, `.yml`) or JSON (`.json`). 
 
 ## Environment Variable Expansion
 
-All values in the configuration file support shell environment variable expansion before parsing. Use `${VAR_NAME}` or `$VAR_NAME` syntax to inject values from your environment.
+`${VAR_NAME}` references anywhere in the configuration file are expanded from the environment before parsing.
 
 ```yaml
 keys:
@@ -15,6 +15,12 @@ keys:
     ssh:
       private_key: "${SSH_PRIVATE_KEY}"
 ```
+
+Rules:
+
+- Only the braced `${VAR_NAME}` form is expanded. Bare `$WORD` text (common in Ansible arguments, cron entries, and passwords) is left untouched.
+- Referencing a variable that is **not set** is an error in `semctl apply` — values are never silently replaced with empty strings. `semctl validate` treats unset variables as empty but prints a warning, so config files can be validated offline without secrets present.
+- To produce a literal `${VAR_NAME}` in a value, escape it as `$${VAR_NAME}`.
 
 ---
 
@@ -305,7 +311,7 @@ Represents a task template in Semaphore. Templates define what playbook to run, 
 | `git_branch` | `string` | No | Override the repository's default branch for this template. |
 | `arguments` | `string` | No | Additional CLI arguments passed to the task runner (JSON array string, e.g., `'["--tags", "setup"]'`). |
 | `start_version` | `string` | No | Starting version string for deploy-type templates. |
-| `autorun` | `boolean` | No | If `true`, automatically run this template when its repository is updated. Default: `false`. |
+| `autorun` | `boolean` | No | If `true`, automatically run this template when its repository is updated. Omitted: keeps the existing value on update, `false` on create. |
 | `suppress_success_alerts` | `boolean` | No | If `true`, suppress notifications on successful task completion. Default: `false`. |
 | `allow_override_args_in_task` | `boolean` | No | If `true`, allow users to override arguments when manually running a task. Default: `false`. |
 | `repository` | `string` | No | Name of a repository defined in the `repositories` section. |
@@ -356,6 +362,8 @@ templates:
 ## ScheduleEntry
 
 Represents a cron schedule attached to a template. Schedules are **create-only** -- there is no list API, so semctl cannot detect or update existing schedules.
+
+> **Warning:** because schedules cannot be reconciled, **every `semctl apply` run creates them again**. Re-applying a file with schedules duplicates them (and the scheduled tasks will run once per duplicate). Pass `--skip-schedules` when re-applying a file whose schedules already exist.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -418,6 +426,21 @@ This ensures that dependent resources are created before the resources that refe
 | Resource has `state: absent` and exists | Deleted |
 | Resource has `state: absent` and does not exist | Skipped |
 | Secret fields provided (private keys, passwords, secrets) | Always updated (API never returns secret values for comparison) |
+
+### Update merge semantics
+
+Updates are **merges**, not replacements. A field omitted from the config keeps its current server-side value:
+
+- String fields: an empty/omitted value means "keep existing".
+- Reference fields (`ssh_key`, `repository`, ...): omitted means "keep existing".
+- Boolean template fields (`autorun`, `suppress_success_alerts`, `allow_override_args_in_task`): omitted means "keep existing"; an explicit `false` actively sets the value to false.
+- Template **survey variables and vaults** are not managed by apply configs and are preserved as configured server-side.
+
+Consequence: apply cannot *clear* a field back to empty — set a new value instead, or change it in the UI.
+
+### Export placeholders
+
+`semctl export` writes `<set-me>` in place of secret values (the API never returns them). `semctl apply` and `semctl validate` **refuse** files that still contain `<set-me>`, so an unedited export can never overwrite real keys or secrets. Replace each placeholder with a real value or an `${ENV_VAR}` reference before applying.
 
 ---
 

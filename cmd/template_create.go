@@ -52,8 +52,8 @@ var templateCreateCmd = &cobra.Command{
 			Autorun:         autorun,
 			BuildTemplateID: buildTplID,
 			ViewID:          viewID,
-			SurveyVars:     []*models.TemplateSurveyVar{},
-			Vaults:         []*models.TemplateVault{},
+			SurveyVars:      []*models.TemplateSurveyVar{},
+			Vaults:          []*models.TemplateVault{},
 		}
 
 		apiClient, err := client.NewAuthenticatedClient()

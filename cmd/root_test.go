@@ -59,7 +59,7 @@ func TestRootCmd_PersistentFlags(t *testing.T) {
 		{"interactive", "I", "false"},
 		{"no-interactive", "N", "false"},
 		{"context", "", ""},
-		{"project", "p", "0"},
+		{"project", "p", ""},
 	}
 
 	for _, tc := range flags {
@@ -101,7 +101,7 @@ func TestRootCmd_PersistentPreRunE_SkipsCompletion(t *testing.T) {
 
 func TestGetProjectID_FromFlag(t *testing.T) {
 	cmd := &cobra.Command{Use: "test"}
-	cmd.Flags().Int32P("project", "p", 0, "project ID")
+	cmd.Flags().StringP("project", "p", "", "project ID or name")
 	_ = cmd.Flags().Set("project", "42")
 
 	id, err := getProjectID(cmd)
@@ -129,7 +129,7 @@ defaults:
 	}
 
 	cmd := &cobra.Command{Use: "test"}
-	cmd.Flags().Int32P("project", "p", 0, "project ID")
+	cmd.Flags().StringP("project", "p", "", "project ID or name")
 
 	id, err := getProjectID(cmd)
 	if err != nil {
@@ -153,10 +153,21 @@ contexts:
 	}
 
 	cmd := &cobra.Command{Use: "test"}
-	cmd.Flags().Int32P("project", "p", 0, "project ID")
+	cmd.Flags().StringP("project", "p", "", "project ID or name")
 
 	_, err := getProjectID(cmd)
 	if err == nil {
 		t.Fatal("expected error when project ID is missing")
+	}
+}
+
+func TestGetProjectID_InvalidNumeric(t *testing.T) {
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().StringP("project", "p", "", "project ID or name")
+	_ = cmd.Flags().Set("project", "-3")
+
+	_, err := getProjectID(cmd)
+	if err == nil {
+		t.Fatal("expected error for negative project ID")
 	}
 }

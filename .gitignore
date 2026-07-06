@@ -3,3 +3,4 @@ semctl.yaml
 dist/
 api/
 semctl
+homelab*.yaml

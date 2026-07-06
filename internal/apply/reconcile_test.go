@@ -26,20 +26,20 @@ func TestKeyNeedsUpdate(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:  "ssh with private key",
-			entry: KeyEntry{Name: "k", Type: "ssh", SSH: &SSHKeyData{PrivateKey: "key"}},
+			name:     "ssh with private key",
+			entry:    KeyEntry{Name: "k", Type: "ssh", SSH: &SSHKeyData{PrivateKey: "key"}},
 			existing: &models.AccessKey{Name: "k", Type: "ssh"},
 			want:     true,
 		},
 		{
-			name:  "ssh without private key",
-			entry: KeyEntry{Name: "k", Type: "ssh", SSH: &SSHKeyData{Login: "user"}},
+			name:     "ssh without private key",
+			entry:    KeyEntry{Name: "k", Type: "ssh", SSH: &SSHKeyData{Login: "user"}},
 			existing: &models.AccessKey{Name: "k", Type: "ssh"},
 			want:     false,
 		},
 		{
-			name:  "login_password with password",
-			entry: KeyEntry{Name: "k", Type: "login_password", LoginPassword: &LoginPasswordData{Password: "pw"}},
+			name:     "login_password with password",
+			entry:    KeyEntry{Name: "k", Type: "login_password", LoginPassword: &LoginPasswordData{Password: "pw"}},
 			existing: &models.AccessKey{Name: "k", Type: "login_password"},
 			want:     true,
 		},
@@ -182,8 +182,20 @@ func TestTemplateNeedsUpdate(t *testing.T) {
 		},
 		{
 			name:     "autorun changed",
-			entry:    TemplateEntry{Name: "t", Autorun: true},
+			entry:    TemplateEntry{Name: "t", Autorun: boolPtr(true)},
 			existing: &models.Template{Name: "t", Autorun: false},
+			want:     true,
+		},
+		{
+			name:     "autorun omitted keeps existing true",
+			entry:    TemplateEntry{Name: "t"},
+			existing: &models.Template{Name: "t", Autorun: true},
+			want:     false,
+		},
+		{
+			name:     "autorun explicit false differs from existing true",
+			entry:    TemplateEntry{Name: "t", Autorun: boolPtr(false)},
+			existing: &models.Template{Name: "t", Autorun: true},
 			want:     true,
 		},
 		{

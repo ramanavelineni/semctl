@@ -5,29 +5,40 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+// ExportPlaceholder is written by `semctl export` in place of secret values,
+// which the API never returns. Apply refuses configs that still contain it.
+const ExportPlaceholder = "<set-me>"
+
+// boolPtr returns a pointer to b.
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // ApplyConfig represents the full declarative configuration file.
 type ApplyConfig struct {
-	Project       string           `json:"project" yaml:"project"`
-	ProjectState  string           `json:"project_state,omitempty" yaml:"project_state,omitempty"`
-	Keys          []KeyEntry       `json:"keys,omitempty" yaml:"keys,omitempty"`
+	Project        string               `json:"project" yaml:"project"`
+	ProjectState   string               `json:"project_state,omitempty" yaml:"project_state,omitempty"`
+	Keys           []KeyEntry           `json:"keys,omitempty" yaml:"keys,omitempty"`
 	VariableGroups []VariableGroupEntry `json:"variable_groups,omitempty" yaml:"variable_groups,omitempty"`
-	Repositories  []RepoEntry      `json:"repositories,omitempty" yaml:"repositories,omitempty"`
-	Inventories   []InventoryEntry `json:"inventories,omitempty" yaml:"inventories,omitempty"`
-	Templates     []TemplateEntry  `json:"templates,omitempty" yaml:"templates,omitempty"`
-	Schedules     []ScheduleEntry  `json:"schedules,omitempty" yaml:"schedules,omitempty"`
+	Repositories   []RepoEntry          `json:"repositories,omitempty" yaml:"repositories,omitempty"`
+	Inventories    []InventoryEntry     `json:"inventories,omitempty" yaml:"inventories,omitempty"`
+	Templates      []TemplateEntry      `json:"templates,omitempty" yaml:"templates,omitempty"`
+	Schedules      []ScheduleEntry      `json:"schedules,omitempty" yaml:"schedules,omitempty"`
 }
 
 // KeyEntry represents a key in the config file.
 type KeyEntry struct {
-	Name       string       `json:"name" yaml:"name"`
-	Type       string       `json:"type,omitempty" yaml:"type,omitempty"`
-	State      string       `json:"state,omitempty" yaml:"state,omitempty"`
-	SSH        *SSHKeyData  `json:"ssh,omitempty" yaml:"ssh,omitempty"`
+	Name          string             `json:"name" yaml:"name"`
+	Type          string             `json:"type,omitempty" yaml:"type,omitempty"`
+	State         string             `json:"state,omitempty" yaml:"state,omitempty"`
+	SSH           *SSHKeyData        `json:"ssh,omitempty" yaml:"ssh,omitempty"`
 	LoginPassword *LoginPasswordData `json:"login_password,omitempty" yaml:"login_password,omitempty"`
 }
 
@@ -46,12 +57,12 @@ type LoginPasswordData struct {
 
 // VariableGroupEntry represents a variable group in the config file.
 type VariableGroupEntry struct {
-	Name                         string            `json:"group_name" yaml:"group_name"`
-	State                        string            `json:"state,omitempty" yaml:"state,omitempty"`
-	Variables                    map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
-	EnvironmentVariables         map[string]string `json:"environment_variables,omitempty" yaml:"environment_variables,omitempty"`
-	Secrets                      map[string]string `json:"secrets,omitempty" yaml:"secrets,omitempty"`
-	SecretEnvironmentVariables   map[string]string `json:"secret_environment_variables,omitempty" yaml:"secret_environment_variables,omitempty"`
+	Name                       string            `json:"group_name" yaml:"group_name"`
+	State                      string            `json:"state,omitempty" yaml:"state,omitempty"`
+	Variables                  map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
+	EnvironmentVariables       map[string]string `json:"environment_variables,omitempty" yaml:"environment_variables,omitempty"`
+	Secrets                    map[string]string `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	SecretEnvironmentVariables map[string]string `json:"secret_environment_variables,omitempty" yaml:"secret_environment_variables,omitempty"`
 }
 
 // EnvVarsToJSON serializes an environment variables map into a JSON string for the API's env field.
@@ -88,6 +99,8 @@ type InventoryEntry struct {
 }
 
 // TemplateEntry represents a template in the config file.
+// Boolean fields are pointers so that "not specified" (keep the existing
+// value) is distinguishable from an explicit false.
 type TemplateEntry struct {
 	Name                    string `json:"name" yaml:"name"`
 	State                   string `json:"state,omitempty" yaml:"state,omitempty"`
@@ -98,9 +111,9 @@ type TemplateEntry struct {
 	GitBranch               string `json:"git_branch,omitempty" yaml:"git_branch,omitempty"`
 	Arguments               string `json:"arguments,omitempty" yaml:"arguments,omitempty"`
 	StartVersion            string `json:"start_version,omitempty" yaml:"start_version,omitempty"`
-	Autorun                 bool   `json:"autorun,omitempty" yaml:"autorun,omitempty"`
-	SuppressSuccessAlerts   bool   `json:"suppress_success_alerts,omitempty" yaml:"suppress_success_alerts,omitempty"`
-	AllowOverrideArgsInTask bool   `json:"allow_override_args_in_task,omitempty" yaml:"allow_override_args_in_task,omitempty"`
+	Autorun                 *bool  `json:"autorun,omitempty" yaml:"autorun,omitempty"`
+	SuppressSuccessAlerts   *bool  `json:"suppress_success_alerts,omitempty" yaml:"suppress_success_alerts,omitempty"`
+	AllowOverrideArgsInTask *bool  `json:"allow_override_args_in_task,omitempty" yaml:"allow_override_args_in_task,omitempty"`
 	Repository              string `json:"repository,omitempty" yaml:"repository,omitempty"`
 	RepositoryID            int64  `json:"repository_id,omitempty" yaml:"repository_id,omitempty"`
 	VariableGroup           string `json:"variable_group,omitempty" yaml:"variable_group,omitempty"`
@@ -122,15 +135,64 @@ type ScheduleEntry struct {
 	Active     *bool  `json:"active,omitempty" yaml:"active,omitempty"`
 }
 
-// ParseFile reads and parses a config file (YAML or JSON) with env var expansion.
+// envVarPattern matches ${VAR} references and their $${VAR} escape form.
+// Bare $VAR (no braces) is intentionally NOT expanded — Ansible arguments and
+// passwords legitimately contain dollar signs.
+var envVarPattern = regexp.MustCompile(`\$?\$\{[A-Za-z_][A-Za-z0-9_]*\}`)
+
+// expandEnv expands ${VAR} references in s. "$${VAR}" escapes to a literal
+// "${VAR}". Returns the expanded string and the sorted, de-duplicated names
+// of referenced variables that are not set in the environment.
+func expandEnv(s string) (string, []string) {
+	missingSet := map[string]bool{}
+	out := envVarPattern.ReplaceAllStringFunc(s, func(m string) string {
+		if strings.HasPrefix(m, "$$") {
+			return m[1:] // $${VAR} → ${VAR}
+		}
+		name := m[2 : len(m)-1]
+		if val, ok := os.LookupEnv(name); ok {
+			return val
+		}
+		missingSet[name] = true
+		return ""
+	})
+
+	var missing []string
+	for name := range missingSet {
+		missing = append(missing, name)
+	}
+	sort.Strings(missing)
+	return out, missing
+}
+
+// ParseFile reads and parses a config file (YAML or JSON), expanding ${VAR}
+// environment variable references. Referencing an unset variable is an error.
 func ParseFile(path string) (*ApplyConfig, error) {
+	cfg, missing, err := parseFileLenient(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("undefined environment variable(s): %s (use $${VAR} for a literal ${VAR})", strings.Join(missing, ", "))
+	}
+	return cfg, nil
+}
+
+// ParseFileOffline parses a config file like ParseFile but tolerates unset
+// environment variables (they expand to empty), returning their names so the
+// caller can warn. Used by offline validation, where secrets are typically
+// not present in the environment.
+func ParseFileOffline(path string) (*ApplyConfig, []string, error) {
+	return parseFileLenient(path)
+}
+
+func parseFileLenient(path string) (*ApplyConfig, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
+		return nil, nil, fmt.Errorf("reading config file: %w", err)
 	}
 
-	// Expand environment variables
-	expanded := os.ExpandEnv(string(data))
+	expanded, missing := expandEnv(string(data))
 
 	var cfg ApplyConfig
 
@@ -138,17 +200,17 @@ func ParseFile(path string) (*ApplyConfig, error) {
 	switch ext {
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
-			return nil, fmt.Errorf("parsing YAML: %w", err)
+			return nil, nil, fmt.Errorf("parsing YAML: %w", err)
 		}
 	case ".json":
 		if err := json.Unmarshal([]byte(expanded), &cfg); err != nil {
-			return nil, fmt.Errorf("parsing JSON: %w", err)
+			return nil, nil, fmt.Errorf("parsing JSON: %w", err)
 		}
 	default:
-		return nil, fmt.Errorf("unsupported file extension %q (use .yaml, .yml, or .json)", ext)
+		return nil, nil, fmt.Errorf("unsupported file extension %q (use .yaml, .yml, or .json)", ext)
 	}
 
-	return &cfg, nil
+	return &cfg, missing, nil
 }
 
 // isSupportedExt returns true if the file extension is a supported config format.
@@ -196,7 +258,6 @@ func CollectFiles(paths []string) ([]string, error) {
 	}
 	return result, nil
 }
-
 
 // Validate checks the config for errors.
 func (c *ApplyConfig) Validate() error {
@@ -304,6 +365,39 @@ func (c *ApplyConfig) Validate() error {
 		}
 		if s.Template == "" && s.TemplateID == 0 {
 			return fmt.Errorf("schedules[%d] %q: template or template_id is required", i, s.Name)
+		}
+	}
+
+	return c.checkPlaceholders()
+}
+
+// checkPlaceholders rejects configs that still contain the <set-me>
+// placeholder written by `semctl export`. Applying one would overwrite real
+// keys and secrets with the literal placeholder text.
+func (c *ApplyConfig) checkPlaceholders() error {
+	fail := func(where string) error {
+		return fmt.Errorf("%s still contains the %q placeholder from 'semctl export': set the real value (or an ${ENV_VAR} reference) before applying", where, ExportPlaceholder)
+	}
+
+	for i, k := range c.Keys {
+		if k.SSH != nil && (k.SSH.PrivateKey == ExportPlaceholder || k.SSH.Passphrase == ExportPlaceholder || k.SSH.Login == ExportPlaceholder) {
+			return fail(fmt.Sprintf("keys[%d] %q", i, k.Name))
+		}
+		if k.LoginPassword != nil && (k.LoginPassword.Password == ExportPlaceholder || k.LoginPassword.Login == ExportPlaceholder) {
+			return fail(fmt.Sprintf("keys[%d] %q", i, k.Name))
+		}
+	}
+
+	for i, vg := range c.VariableGroups {
+		for name, val := range vg.Secrets {
+			if val == ExportPlaceholder {
+				return fail(fmt.Sprintf("variable_groups[%d] %q secret %q", i, vg.Name, name))
+			}
+		}
+		for name, val := range vg.SecretEnvironmentVariables {
+			if val == ExportPlaceholder {
+				return fail(fmt.Sprintf("variable_groups[%d] %q secret env var %q", i, vg.Name, name))
+			}
 		}
 	}
 

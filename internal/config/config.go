@@ -1,30 +1,57 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
+// DefaultPort is the port assumed when a server string has no port.
+const DefaultPort = 3000
+
 // ContextConfig holds the configuration for a single server context.
 type ContextConfig struct {
-	ServerHost   string
-	ServerPort   int
-	ServerScheme string
-	AuthUsername  string
-	AuthPassword string
-	AuthAPIToken string
+	ServerHost         string
+	ServerPort         int
+	ServerScheme       string
+	InsecureSkipVerify bool
+	CACert             string
+	AuthUsername       string
+	AuthPassword       string
+	AuthAPIToken       string
+}
+
+// serverOverride holds a session-scoped host:port override (from --server).
+var serverOverride string
+
+// SetServerOverride overrides the server host:port for the current session.
+func SetServerOverride(hostPort string) {
+	serverOverride = hostPort
 }
 
 var v *viper.Viper
 
+// loadedFromCWD records whether the config file was picked up from the
+// current working directory (as opposed to the home config dir or --config).
+var loadedFromCWD bool
+
+// LoadedFromCWD reports whether the loaded config file came from the current
+// working directory.
+func LoadedFromCWD() bool {
+	return loadedFromCWD
+}
+
 // Load initializes Viper and loads the config file.
 func Load(cfgFile string) error {
+	loadedFromCWD = false
 	v = viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
@@ -47,8 +74,10 @@ func Load(cfgFile string) error {
 		// For local project config, use the explicit filename with extension
 		if _, err := os.Stat("semctl.yaml"); err == nil {
 			v.SetConfigFile("semctl.yaml")
+			loadedFromCWD = true
 		} else if _, err := os.Stat(".semctl.yaml"); err == nil {
 			v.SetConfigFile(".semctl.yaml")
+			loadedFromCWD = true
 		}
 	}
 
@@ -123,12 +152,14 @@ func GetContextConfig(name string) (*ContextConfig, error) {
 	}
 
 	return &ContextConfig{
-		ServerHost:   v.GetString(prefix + ".server.host"),
-		ServerPort:   v.GetInt(prefix + ".server.port"),
-		ServerScheme: v.GetString(prefix + ".server.scheme"),
-		AuthUsername:  v.GetString(prefix + ".auth.username"),
-		AuthPassword: v.GetString(prefix + ".auth.password"),
-		AuthAPIToken: v.GetString(prefix + ".auth.api_token"),
+		ServerHost:         v.GetString(prefix + ".server.host"),
+		ServerPort:         v.GetInt(prefix + ".server.port"),
+		ServerScheme:       v.GetString(prefix + ".server.scheme"),
+		InsecureSkipVerify: v.GetBool(prefix + ".server.insecure_skip_verify"),
+		CACert:             v.GetString(prefix + ".server.ca_cert"),
+		AuthUsername:       v.GetString(prefix + ".auth.username"),
+		AuthPassword:       v.GetString(prefix + ".auth.password"),
+		AuthAPIToken:       v.GetString(prefix + ".auth.api_token"),
 	}, nil
 }
 
@@ -142,43 +173,125 @@ func GetContextServerDisplay(name string) string {
 	if scheme == "" {
 		scheme = "http"
 	}
-	return fmt.Sprintf("%s://%s:%d", scheme, cc.ServerHost, cc.ServerPort)
+	return fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(cc.ServerHost, strconv.Itoa(cc.ServerPort)))
 }
 
-// GetServerURL returns the full API URL for the current context.
-func GetServerURL() string {
-	ctx := GetCurrentContext()
-	cc, err := GetContextConfig(ctx)
-	if err != nil {
-		return ""
+// ParseHostPort splits a "host[:port]" string, defaulting the port to
+// DefaultPort when omitted. Invalid ports are an error (not silently ignored).
+// Handles IPv6 literals like "[::1]:3000" and bare "::1".
+func ParseHostPort(s string) (string, int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", 0, fmt.Errorf("server is required")
 	}
-	scheme := cc.ServerScheme
+
+	host, portStr, err := net.SplitHostPort(s)
+	if err != nil {
+		var addrErr *net.AddrError
+		if errors.As(err, &addrErr) && strings.Contains(addrErr.Err, "missing port") {
+			return strings.Trim(s, "[]"), DefaultPort, nil
+		}
+		// A bare IPv6 literal like "::1" trips "too many colons".
+		if ip := net.ParseIP(s); ip != nil {
+			return s, DefaultPort, nil
+		}
+		return "", 0, fmt.Errorf("invalid server %q: %w", s, err)
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("invalid port %q in server %q", portStr, s)
+	}
+	return host, port, nil
+}
+
+// ResolveServer returns the effective server host, port, and scheme for the
+// current context. Precedence: --server flag > SEMCTL_SERVER env var > context
+// config. Scheme precedence: SEMCTL_SCHEME env var > context config > "http".
+func ResolveServer() (host string, port int, scheme string, err error) {
+	var cc *ContextConfig
+	if v != nil {
+		cc, _ = GetContextConfig(GetCurrentContext())
+	}
+
+	switch {
+	case serverOverride != "":
+		host, port, err = ParseHostPort(serverOverride)
+		if err != nil {
+			return "", 0, "", fmt.Errorf("--server: %w", err)
+		}
+	case os.Getenv("SEMCTL_SERVER") != "":
+		host, port, err = ParseHostPort(os.Getenv("SEMCTL_SERVER"))
+		if err != nil {
+			return "", 0, "", fmt.Errorf("SEMCTL_SERVER: %w", err)
+		}
+	case cc != nil && cc.ServerHost != "":
+		host = cc.ServerHost
+		port = cc.ServerPort
+		if port == 0 {
+			port = DefaultPort
+		}
+	default:
+		return "", 0, "", fmt.Errorf("no server configured for context %q: run 'semctl login', set SEMCTL_SERVER, or use --server", GetCurrentContext())
+	}
+
+	scheme = os.Getenv("SEMCTL_SCHEME")
+	if scheme == "" && cc != nil {
+		scheme = cc.ServerScheme
+	}
 	if scheme == "" {
 		scheme = "http"
 	}
-	port := cc.ServerPort
-	if port == 0 {
-		port = 3000
+	if scheme != "http" && scheme != "https" {
+		return "", 0, "", fmt.Errorf("invalid scheme %q (must be http or https)", scheme)
 	}
-	return fmt.Sprintf("%s://%s:%d/api", scheme, cc.ServerHost, port)
+
+	return host, port, scheme, nil
 }
 
-// GetUsername returns the auth username for the current context.
+// GetServerURL returns the full API URL for the current context.
+func GetServerURL() (string, error) {
+	host, port, scheme, err := ResolveServer()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s://%s/api", scheme, net.JoinHostPort(host, strconv.Itoa(port))), nil
+}
+
+// GetUsername returns the auth username: SEMCTL_AUTH_USERNAME env var, or the
+// current context's config value.
 func GetUsername() string {
-	ctx := GetCurrentContext()
-	return v.GetString(fmt.Sprintf("contexts.%s.auth.username", ctx))
+	if u := os.Getenv("SEMCTL_AUTH_USERNAME"); u != "" {
+		return u
+	}
+	if v == nil {
+		return ""
+	}
+	return v.GetString(fmt.Sprintf("contexts.%s.auth.username", GetCurrentContext()))
 }
 
-// GetPassword returns the auth password for the current context.
+// GetPassword returns the auth password: SEMCTL_AUTH_PASSWORD env var, or the
+// current context's config value.
 func GetPassword() string {
-	ctx := GetCurrentContext()
-	return v.GetString(fmt.Sprintf("contexts.%s.auth.password", ctx))
+	if p := os.Getenv("SEMCTL_AUTH_PASSWORD"); p != "" {
+		return p
+	}
+	if v == nil {
+		return ""
+	}
+	return v.GetString(fmt.Sprintf("contexts.%s.auth.password", GetCurrentContext()))
 }
 
-// GetAPIToken returns the auth API token for the current context.
+// GetAPIToken returns the auth API token: SEMCTL_API_TOKEN env var, or the
+// current context's config value.
 func GetAPIToken() string {
-	ctx := GetCurrentContext()
-	return v.GetString(fmt.Sprintf("contexts.%s.auth.api_token", ctx))
+	if t := os.Getenv("SEMCTL_API_TOKEN"); t != "" {
+		return t
+	}
+	if v == nil {
+		return ""
+	}
+	return v.GetString(fmt.Sprintf("contexts.%s.auth.api_token", GetCurrentContext()))
 }
 
 // GetDefaultProjectID returns the default project ID from config.

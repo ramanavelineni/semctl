@@ -3,18 +3,42 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
+	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/config"
 	"github.com/ramanavelineni/semctl/internal/output"
+	"github.com/ramanavelineni/semctl/internal/style"
+	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "semctl",
-	Short: "Semaphore UI CLI",
+	Use:          "semctl",
+	Short:        "Semaphore UI CLI",
 	Long:         "A command-line interface for managing Semaphore UI via its REST API.",
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Session-level flags apply to every command, including those that
+		// skip config loading (e.g. login).
+		if noColor, _ := cmd.Flags().GetBool("no-color"); noColor {
+			output.DisableColor()
+		}
+		if d, _ := cmd.Flags().GetDuration("timeout"); d > 0 {
+			client.SetTimeout(d)
+		}
+		if insecure, _ := cmd.Flags().GetBool("insecure"); insecure {
+			client.SetInsecureSkipVerify(true)
+		}
+		if caCert, _ := cmd.Flags().GetString("ca-cert"); caCert != "" {
+			client.SetCACert(caCert)
+		}
+		if serverFlag, _ := cmd.Flags().GetString("server"); serverFlag != "" {
+			config.SetServerOverride(serverFlag)
+		}
+
 		// Skip config loading for commands that don't need existing config
 		switch cmd.Name() {
 		case "completion", "version", "__complete", "login", "logout":
@@ -29,6 +53,12 @@ var rootCmd = &cobra.Command{
 		cfgFile, _ := cmd.Flags().GetString("config")
 		if err := config.Load(cfgFile); err != nil {
 			return fmt.Errorf("config error: %w", err)
+		}
+
+		// A config file in the working directory silently redirects commands
+		// to whatever server it names — make that visible.
+		if config.LoadedFromCWD() {
+			style.Info(fmt.Sprintf("Using config from current directory: %s", config.ConfigFilePath()))
 		}
 
 		// Apply --context override if set
@@ -47,10 +77,6 @@ var rootCmd = &cobra.Command{
 			output.SetFormat(output.FormatFromConfig())
 		}
 
-		if noColor, _ := cmd.Flags().GetBool("no-color"); noColor {
-			output.DisableColor()
-		}
-
 		return nil
 	},
 }
@@ -62,15 +88,40 @@ func Execute() {
 	}
 }
 
-// getProjectID resolves the project ID from --project flag, config default, or returns an error.
+// getProjectID resolves the project from the --project flag (numeric ID or
+// project name), then the config default, or returns an error.
 func getProjectID(cmd *cobra.Command) (int32, error) {
-	if p, _ := cmd.Flags().GetInt32("project"); p > 0 {
-		return p, nil
+	if p, _ := cmd.Flags().GetString("project"); p != "" {
+		if id, err := strconv.ParseInt(p, 10, 32); err == nil {
+			if id <= 0 {
+				return 0, fmt.Errorf("invalid project ID %q", p)
+			}
+			return int32(id), nil
+		}
+		return resolveProjectByName(p)
 	}
 	if p := config.GetDefaultProjectID(); p > 0 {
 		return int32(p), nil
 	}
-	return 0, fmt.Errorf("project ID is required: use --project flag or set defaults.project_id in config")
+	return 0, fmt.Errorf("project is required: use --project (ID or name) or set defaults.project_id in config")
+}
+
+// resolveProjectByName looks up a project ID by case-insensitive name.
+func resolveProjectByName(name string) (int32, error) {
+	apiClient, err := client.NewAuthenticatedClient()
+	if err != nil {
+		return 0, err
+	}
+	resp, err := apiClient.Project.GetProjects(project.NewGetProjectsParams(), nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list projects while resolving %q: %w", name, err)
+	}
+	for _, pr := range resp.GetPayload() {
+		if strings.EqualFold(pr.Name, name) {
+			return int32(pr.ID), nil
+		}
+	}
+	return 0, fmt.Errorf("project %q not found", name)
 }
 
 func init() {
@@ -79,9 +130,12 @@ func init() {
 	rootCmd.PersistentFlags().Bool("yaml", false, "output as YAML")
 	rootCmd.PersistentFlags().BoolP("yes", "y", false, "auto-confirm prompts")
 	rootCmd.PersistentFlags().Bool("no-color", false, "disable colored output")
-	rootCmd.PersistentFlags().StringP("server", "s", "", "override server host:port")
+	rootCmd.PersistentFlags().StringP("server", "s", "", "override server host:port for this invocation")
+	rootCmd.PersistentFlags().Duration("timeout", 30*time.Second, "HTTP request timeout (e.g. 30s, 2m)")
+	rootCmd.PersistentFlags().Bool("insecure", false, "skip TLS certificate verification (not recommended)")
+	rootCmd.PersistentFlags().String("ca-cert", "", "path to a CA certificate file for TLS verification")
 	rootCmd.PersistentFlags().BoolP("interactive", "I", false, "force interactive mode even when all inputs are provided")
 	rootCmd.PersistentFlags().BoolP("no-interactive", "N", false, "disable interactive mode even when inputs are missing")
 	rootCmd.PersistentFlags().String("context", "", "use a specific context for this command")
-	rootCmd.PersistentFlags().Int32P("project", "p", 0, "project ID for project-scoped commands")
+	rootCmd.PersistentFlags().StringP("project", "p", "", "project ID or name for project-scoped commands")
 }

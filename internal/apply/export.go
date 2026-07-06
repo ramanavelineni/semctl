@@ -325,9 +325,9 @@ func convertTemplates(templates []*models.Template, repoIDToName, envIDToName, i
 			GitBranch:               t.GitBranch,
 			Arguments:               t.Arguments,
 			StartVersion:            t.StartVersion,
-			Autorun:                 t.Autorun,
-			SuppressSuccessAlerts:   t.SuppressSuccessAlerts,
-			AllowOverrideArgsInTask: t.AllowOverrideArgsInTask,
+			Autorun:                 exportBool(t.Autorun),
+			SuppressSuccessAlerts:   exportBool(t.SuppressSuccessAlerts),
+			AllowOverrideArgsInTask: exportBool(t.AllowOverrideArgsInTask),
 			ViewID:                  t.ViewID,
 		}
 		if name, ok := repoIDToName[t.RepositoryID]; ok && t.RepositoryID != 0 {
@@ -353,6 +353,16 @@ func convertTemplates(templates []*models.Template, repoIDToName, envIDToName, i
 		result = append(result, entry)
 	}
 	return result
+}
+
+// exportBool exports explicit boolean values only when true, keeping exported
+// files free of noisy "field: false" lines. Omitted means "keep existing"
+// under apply's merge semantics, which matches a false default on create.
+func exportBool(b bool) *bool {
+	if !b {
+		return nil
+	}
+	return &b
 }
 
 // MarshalYAML serializes an ApplyConfig to YAML bytes.

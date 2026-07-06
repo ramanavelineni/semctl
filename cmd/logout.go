@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 
@@ -17,7 +15,8 @@ import (
 var logoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Log out and remove saved credentials",
-	Long:  `Remove saved credentials from the config file and delete the cached API token for the current (or specified) context.`,
+	Long: `Revoke the API token server-side, delete the cached token, and remove
+saved credentials from the config file for the current (or specified) context.`,
 	Example: `  semctl logout
   semctl -y logout
   semctl logout --context prod
@@ -27,7 +26,6 @@ var logoutCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		autoConfirm, _ := cmd.Flags().GetBool("yes")
 		contextFlag, _ := cmd.Flags().GetString("context")
 
 		// Load config (logout skips PersistentPreRunE)
@@ -39,32 +37,37 @@ var logoutCmd = &cobra.Command{
 			targetContext = config.GetCurrentContext()
 		}
 
-		promptMsg := fmt.Sprintf("Log out of context %q and remove saved credentials?", targetContext)
-
 		if interactive {
 			var confirm bool
 			if err := newForm(
 				huh.NewGroup(
 					huh.NewConfirm().
 						Title("Log out?").
-						Description(fmt.Sprintf("This will remove credentials and cached token for context %q.", targetContext)).
+						Description(fmt.Sprintf("This will revoke the API token and remove credentials for context %q.", targetContext)).
 						Value(&confirm),
 				),
 			).Run(); err != nil {
 				return err
 			}
 			if !confirm {
-				style.Info("Cancelled.")
-				return nil
+				return errCancelled
 			}
-		} else if !autoConfirm {
-			fmt.Printf("%s [y/N] ", promptMsg)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
-				style.Info("Cancelled.")
-				return nil
+		} else {
+			if err := confirmAction(cmd, fmt.Sprintf("Log out of context %q and remove saved credentials?", targetContext)); err != nil {
+				return err
+			}
+		}
+
+		// Revoke the token server-side before deleting the local cache, so a
+		// leaked cache file cannot be used after logout.
+		if token, err := client.LoadCachedTokenForContext(targetContext); err == nil && token != "" {
+			serverDisplay := config.GetContextServerDisplay(targetContext)
+			if serverDisplay != "" {
+				if err := client.RevokeToken(serverDisplay+"/api", token); err != nil {
+					style.Warning(fmt.Sprintf("Failed to revoke API token server-side: %s. The token may remain valid until it is deleted in the Semaphore UI.", err))
+				} else {
+					style.Info("API token revoked server-side.")
+				}
 			}
 		}
 

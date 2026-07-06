@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/apply"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -32,11 +33,14 @@ No API calls are made.`,
 
 		errors := 0
 		for _, f := range files {
-			cfg, err := apply.ParseFile(f)
+			cfg, missingEnv, err := apply.ParseFileOffline(f)
 			if err != nil {
 				style.Error(fmt.Sprintf("%s: %v", f, err))
 				errors++
 				continue
+			}
+			if len(missingEnv) > 0 {
+				style.Warning(fmt.Sprintf("%s: environment variable(s) not set (treated as empty for offline validation, but 'semctl apply' will fail): %s", f, strings.Join(missingEnv, ", ")))
 			}
 			if err := cfg.Validate(); err != nil {
 				style.Error(fmt.Sprintf("%s: %v", f, err))

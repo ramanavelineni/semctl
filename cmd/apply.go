@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/apply"
 	"github.com/ramanavelineni/semctl/internal/client"
@@ -23,7 +21,13 @@ Use --dry-run to preview changes without applying them.
 Multiple files can be specified with repeated -f flags. Each file is applied
 independently in order. Directories are scanned for .yaml, .yml, and .json files.
 
-Environment variables in config files are expanded (e.g. ${SSH_PRIVATE_KEY}).`,
+${VAR} references in config files are expanded from the environment.
+Referencing an unset variable is an error; write $${VAR} for a literal ${VAR}.
+Bare $WORD text (no braces) is left untouched.
+
+Note: schedules cannot be reconciled (the Semaphore API has no schedule list
+endpoint), so they are created on every apply. Use --skip-schedules when
+re-applying a file whose schedules already exist.`,
 	Example: `  semctl apply -f project.yaml
   semctl apply -f keys.yaml -f templates.yaml
   semctl apply -f ./semaphore/
@@ -32,7 +36,7 @@ Environment variables in config files are expanded (e.g. ${SSH_PRIVATE_KEY}).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePaths, _ := cmd.Flags().GetStringArray("file")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
-		autoConfirm, _ := cmd.Flags().GetBool("yes")
+		skipSchedules, _ := cmd.Flags().GetBool("skip-schedules")
 
 		if len(filePaths) == 0 {
 			return fmt.Errorf("--file (-f) is required")
@@ -70,6 +74,10 @@ Environment variables in config files are expanded (e.g. ${SSH_PRIVATE_KEY}).`,
 				continue
 			}
 
+			if skipSchedules {
+				cfg.Schedules = nil
+			}
+
 			recon := apply.NewReconciler(apiClient, cfg)
 			plan, err := recon.BuildPlan()
 			if err != nil {
@@ -79,6 +87,10 @@ Environment variables in config files are expanded (e.g. ${SSH_PRIVATE_KEY}).`,
 			}
 
 			fmt.Fprint(os.Stderr, plan.FormatPlan())
+
+			if len(plan.ActionsByType(apply.ResourceSchedule)) > 0 {
+				style.Warning("Schedules cannot be reconciled on this Semaphore API version (no list endpoint): every apply CREATES them again. Re-applying this file will duplicate schedules — use --skip-schedules for repeat applies.")
+			}
 
 			if !plan.HasChanges() {
 				style.Success("No changes needed.")
@@ -90,15 +102,8 @@ Environment variables in config files are expanded (e.g. ${SSH_PRIVATE_KEY}).`,
 				continue
 			}
 
-			if !autoConfirm {
-				fmt.Fprint(os.Stderr, "Apply these changes? [y/N] ")
-				reader := bufio.NewReader(os.Stdin)
-				response, _ := reader.ReadString('\n')
-				response = strings.TrimSpace(strings.ToLower(response))
-				if response != "y" && response != "yes" {
-					style.Info("Cancelled.")
-					continue
-				}
+			if err := confirmAction(cmd, "Apply these changes?"); err != nil {
+				return err
 			}
 
 			executor := apply.NewExecutor(apiClient, cfg, recon)
@@ -133,4 +138,5 @@ func init() {
 
 	applyCmd.Flags().StringArrayP("file", "f", nil, "config file or directory (can be specified multiple times)")
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
+	applyCmd.Flags().Bool("skip-schedules", false, "skip schedule resources (schedules cannot be reconciled and would be duplicated on re-apply)")
 }
