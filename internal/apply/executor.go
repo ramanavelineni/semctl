@@ -158,7 +158,7 @@ func (e *Executor) executeKey(action ResourceAction) error {
 		}
 
 		k := resp.GetPayload()
-		e.recon.KeyIDByName[k.Name] = k.ID
+		e.recon.KeyIDByName[strings.ToLower(k.Name)] = k.ID
 		style.Success(fmt.Sprintf("Created key %q (ID: %d)", k.Name, k.ID))
 
 	case ActionUpdate:
@@ -225,9 +225,9 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 		req := &models.EnvironmentRequest{
 			ProjectID: pid,
 			Name:      entry.Name,
-			JSON:    VarsToJSON(entry.Variables),
-			Env:     EnvVarsToJSON(entry.EnvironmentVariables),
-			Secrets: buildAllSecretRequests(entry.Secrets, entry.SecretEnvironmentVariables, "create"),
+			JSON:      VarsToJSON(entry.Variables),
+			Env:       EnvVarsToJSON(entry.EnvironmentVariables),
+			Secrets:   buildAllSecretRequests(entry.Secrets, entry.SecretEnvironmentVariables, "create"),
 		}
 
 		params := variable_group.NewPostProjectProjectIDEnvironmentParams()
@@ -240,7 +240,7 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 		}
 
 		env := resp.GetPayload()
-		e.recon.VarGroupIDByName[env.Name] = env.ID
+		e.recon.VarGroupIDByName[strings.ToLower(env.Name)] = env.ID
 		style.Success(fmt.Sprintf("Created variable group %q (ID: %d)", env.Name, env.ID))
 
 	case ActionUpdate:
@@ -260,9 +260,9 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 			ID:        action.ExistingID,
 			ProjectID: pid,
 			Name:      entry.Name,
-			JSON:    VarsToJSON(entry.Variables),
-			Env:     EnvVarsToJSON(entry.EnvironmentVariables),
-			Secrets: buildAllSecretUpdateRequests(entry.Secrets, entry.SecretEnvironmentVariables, existing.Secrets),
+			JSON:      VarsToJSON(entry.Variables),
+			Env:       EnvVarsToJSON(entry.EnvironmentVariables),
+			Secrets:   buildAllSecretUpdateRequests(entry.Secrets, entry.SecretEnvironmentVariables, existing.Secrets),
 		}
 
 		putParams := variable_group.NewPutProjectProjectIDEnvironmentEnvironmentIDParams()
@@ -315,7 +315,7 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 		}
 
 		r := resp.GetPayload()
-		e.recon.RepoIDByName[r.Name] = r.ID
+		e.recon.RepoIDByName[strings.ToLower(r.Name)] = r.ID
 		style.Success(fmt.Sprintf("Created repository %q (ID: %d)", r.Name, r.ID))
 
 	case ActionUpdate:
@@ -326,6 +326,13 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 			GitURL:    entry.GitURL,
 			GitBranch: entry.GitBranch,
 			SSHKeyID:  sshKeyID,
+		}
+		// Merge over the existing resource: fields omitted from the config
+		// keep their current server-side values instead of being zeroed.
+		if existing := e.recon.ExistingRepoByID[action.ExistingID]; existing != nil {
+			req.GitURL = mergeStr(entry.GitURL, existing.GitURL)
+			req.GitBranch = mergeStr(entry.GitBranch, existing.GitBranch)
+			req.SSHKeyID = mergeID(sshKeyID, existing.SSHKeyID)
 		}
 
 		params := repository.NewPutProjectProjectIDRepositoriesRepositoryIDParams()
@@ -382,7 +389,7 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 		}
 
 		inv := resp.GetPayload()
-		e.recon.InventoryIDByName[inv.Name] = inv.ID
+		e.recon.InventoryIDByName[strings.ToLower(inv.Name)] = inv.ID
 		style.Success(fmt.Sprintf("Created inventory %q (ID: %d)", inv.Name, inv.ID))
 
 	case ActionUpdate:
@@ -395,6 +402,13 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 			SSHKeyID:     sshKeyID,
 			BecomeKeyID:  becomeKeyID,
 			RepositoryID: repoID,
+		}
+		if existing := e.recon.ExistingInventoryByID[action.ExistingID]; existing != nil {
+			req.Type = mergeStr(entry.Type, existing.Type)
+			req.Inventory = mergeStr(entry.Inventory, existing.Inventory)
+			req.SSHKeyID = mergeID(sshKeyID, existing.SSHKeyID)
+			req.BecomeKeyID = mergeID(becomeKeyID, existing.BecomeKeyID)
+			req.RepositoryID = mergeID(repoID, existing.RepositoryID)
 		}
 
 		params := inventory.NewPutProjectProjectIDInventoryInventoryIDParams()
@@ -442,16 +456,16 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			GitBranch:               entry.GitBranch,
 			Arguments:               entry.Arguments,
 			StartVersion:            entry.StartVersion,
-			Autorun:                 entry.Autorun,
-			SuppressSuccessAlerts:   entry.SuppressSuccessAlerts,
-			AllowOverrideArgsInTask: entry.AllowOverrideArgsInTask,
+			Autorun:                 entry.Autorun != nil && *entry.Autorun,
+			SuppressSuccessAlerts:   entry.SuppressSuccessAlerts != nil && *entry.SuppressSuccessAlerts,
+			AllowOverrideArgsInTask: entry.AllowOverrideArgsInTask != nil && *entry.AllowOverrideArgsInTask,
 			RepositoryID:            repoID,
 			EnvironmentID:           envID,
 			InventoryID:             invID,
 			BuildTemplateID:         buildTplID,
 			ViewID:                  entry.ViewID,
-			SurveyVars:             []*models.TemplateSurveyVar{},
-			Vaults:                 []*models.TemplateVault{},
+			SurveyVars:              []*models.TemplateSurveyVar{},
+			Vaults:                  []*models.TemplateVault{},
 		}
 
 		params := template.NewPostProjectProjectIDTemplatesParams()
@@ -464,7 +478,7 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 		}
 
 		t := resp.GetPayload()
-		e.recon.TemplateIDByName[t.Name] = t.ID
+		e.recon.TemplateIDByName[strings.ToLower(t.Name)] = t.ID
 		style.Success(fmt.Sprintf("Created template %q (ID: %d)", t.Name, t.ID))
 
 	case ActionUpdate:
@@ -479,16 +493,41 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			GitBranch:               entry.GitBranch,
 			Arguments:               entry.Arguments,
 			StartVersion:            entry.StartVersion,
-			Autorun:                 entry.Autorun,
-			SuppressSuccessAlerts:   entry.SuppressSuccessAlerts,
-			AllowOverrideArgsInTask: entry.AllowOverrideArgsInTask,
+			Autorun:                 entry.Autorun != nil && *entry.Autorun,
+			SuppressSuccessAlerts:   entry.SuppressSuccessAlerts != nil && *entry.SuppressSuccessAlerts,
+			AllowOverrideArgsInTask: entry.AllowOverrideArgsInTask != nil && *entry.AllowOverrideArgsInTask,
 			RepositoryID:            repoID,
 			EnvironmentID:           envID,
 			InventoryID:             invID,
 			BuildTemplateID:         buildTplID,
 			ViewID:                  entry.ViewID,
-			SurveyVars:             []*models.TemplateSurveyVar{},
-			Vaults:                 []*models.TemplateVault{},
+			SurveyVars:              []*models.TemplateSurveyVar{},
+			Vaults:                  []*models.TemplateVault{},
+		}
+		if existing := e.recon.ExistingTemplateByID[action.ExistingID]; existing != nil {
+			req.Type = mergeStr(entry.Type, existing.Type)
+			req.App = mergeStr(entry.App, existing.App)
+			req.Playbook = mergeStr(entry.Playbook, existing.Playbook)
+			req.Description = mergeStr(entry.Description, existing.Description)
+			req.GitBranch = mergeStr(entry.GitBranch, existing.GitBranch)
+			req.Arguments = mergeStr(entry.Arguments, existing.Arguments)
+			req.StartVersion = mergeStr(entry.StartVersion, existing.StartVersion)
+			req.Autorun = mergeBool(entry.Autorun, existing.Autorun)
+			req.SuppressSuccessAlerts = mergeBool(entry.SuppressSuccessAlerts, existing.SuppressSuccessAlerts)
+			req.AllowOverrideArgsInTask = mergeBool(entry.AllowOverrideArgsInTask, existing.AllowOverrideArgsInTask)
+			req.RepositoryID = mergeID(repoID, existing.RepositoryID)
+			req.EnvironmentID = mergeID(envID, existing.EnvironmentID)
+			req.InventoryID = mergeID(invID, existing.InventoryID)
+			req.BuildTemplateID = mergeID(buildTplID, existing.BuildTemplateID)
+			req.ViewID = mergeID(entry.ViewID, existing.ViewID)
+			// Survey vars and vaults are not managed by apply configs yet —
+			// preserve whatever is configured server-side instead of wiping it.
+			if existing.SurveyVars != nil {
+				req.SurveyVars = existing.SurveyVars
+			}
+			if existing.Vaults != nil {
+				req.Vaults = existing.Vaults
+			}
 		}
 
 		params := template.NewPutProjectProjectIDTemplatesTemplateIDParams()
@@ -550,6 +589,30 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 	s := resp.GetPayload()
 	style.Success(fmt.Sprintf("Created schedule %q (ID: %d)", s.Name, s.ID))
 	return nil
+}
+
+// Merge helpers: config fields left empty/nil fall back to the existing
+// server-side value on update, so partial configs don't zero out fields.
+
+func mergeStr(entry, existing string) string {
+	if entry != "" {
+		return entry
+	}
+	return existing
+}
+
+func mergeID(resolved, existing int64) int64 {
+	if resolved != 0 {
+		return resolved
+	}
+	return existing
+}
+
+func mergeBool(entry *bool, existing bool) bool {
+	if entry != nil {
+		return *entry
+	}
+	return existing
 }
 
 // buildAllSecretRequests combines both secret types (var + env) into a single slice for creation.

@@ -20,12 +20,20 @@ type Reconciler struct {
 	config    *ApplyConfig
 	projectID int64
 
-	// Name-to-ID maps populated during reconciliation
+	// Name-to-ID maps populated during reconciliation.
+	// Keys are lowercased names (lookups are case-insensitive).
 	KeyIDByName       map[string]int64
-	VarGroupIDByName       map[string]int64
+	VarGroupIDByName  map[string]int64
 	RepoIDByName      map[string]int64
 	InventoryIDByName map[string]int64
 	TemplateIDByName  map[string]int64
+
+	// Existing resources by ID, populated during reconciliation. The executor
+	// merges config entries over these so that fields omitted from the config
+	// keep their current server-side values on update.
+	ExistingRepoByID      map[int64]*models.Repository
+	ExistingInventoryByID map[int64]*models.Inventory
+	ExistingTemplateByID  map[int64]*models.Template
 }
 
 // NewReconciler creates a new reconciler.
@@ -34,10 +42,14 @@ func NewReconciler(client *apiclient.Semapi, config *ApplyConfig) *Reconciler {
 		client:            client,
 		config:            config,
 		KeyIDByName:       make(map[string]int64),
-		VarGroupIDByName:       make(map[string]int64),
+		VarGroupIDByName:  make(map[string]int64),
 		RepoIDByName:      make(map[string]int64),
 		InventoryIDByName: make(map[string]int64),
 		TemplateIDByName:  make(map[string]int64),
+
+		ExistingRepoByID:      make(map[int64]*models.Repository),
+		ExistingInventoryByID: make(map[int64]*models.Inventory),
+		ExistingTemplateByID:  make(map[int64]*models.Template),
 	}
 }
 
@@ -137,15 +149,15 @@ func (r *Reconciler) resolveProject() (ResourceAction, error) {
 
 	if r.config.ProjectState == "absent" {
 		return ResourceAction{
-			Type:   ResourceProject,
-			Action: ActionSkip,
-			Label:  r.config.Project,
+			Type:        ResourceProject,
+			Action:      ActionSkip,
+			Label:       r.config.Project,
 			Description: "already absent",
 		}, nil
 	}
 
 	return ResourceAction{
-		Type:  ResourceProject,
+		Type:   ResourceProject,
 		Action: ActionCreate,
 		Label:  r.config.Project,
 	}, nil
@@ -426,6 +438,7 @@ func (r *Reconciler) reconcileRepositories(plan *Plan) error {
 	existing := resp.GetPayload()
 	for _, repo := range existing {
 		r.RepoIDByName[strings.ToLower(repo.Name)] = repo.ID
+		r.ExistingRepoByID[repo.ID] = repo
 	}
 
 	for i, entry := range r.config.Repositories {
@@ -483,6 +496,7 @@ func (r *Reconciler) reconcileInventories(plan *Plan) error {
 	existing := resp.GetPayload()
 	for _, inv := range existing {
 		r.InventoryIDByName[strings.ToLower(inv.Name)] = inv.ID
+		r.ExistingInventoryByID[inv.ID] = inv
 	}
 
 	for i, entry := range r.config.Inventories {
@@ -540,6 +554,7 @@ func (r *Reconciler) reconcileTemplates(plan *Plan) error {
 	existing := resp.GetPayload()
 	for _, t := range existing {
 		r.TemplateIDByName[strings.ToLower(t.Name)] = t.ID
+		r.ExistingTemplateByID[t.ID] = t
 	}
 
 	for i, entry := range r.config.Templates {
@@ -676,13 +691,13 @@ func (r *Reconciler) templateNeedsUpdate(entry TemplateEntry, existing *models.T
 	if entry.StartVersion != "" && entry.StartVersion != existing.StartVersion {
 		return true
 	}
-	if entry.Autorun != existing.Autorun {
+	if entry.Autorun != nil && *entry.Autorun != existing.Autorun {
 		return true
 	}
-	if entry.SuppressSuccessAlerts != existing.SuppressSuccessAlerts {
+	if entry.SuppressSuccessAlerts != nil && *entry.SuppressSuccessAlerts != existing.SuppressSuccessAlerts {
 		return true
 	}
-	if entry.AllowOverrideArgsInTask != existing.AllowOverrideArgsInTask {
+	if entry.AllowOverrideArgsInTask != nil && *entry.AllowOverrideArgsInTask != existing.AllowOverrideArgsInTask {
 		return true
 	}
 
