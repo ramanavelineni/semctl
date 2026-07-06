@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/config"
@@ -20,17 +18,8 @@ var contextDeleteCmd = &cobra.Command{
 	Example: "  semctl context delete staging",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		autoConfirm, _ := cmd.Flags().GetBool("yes")
-
-		if !autoConfirm {
-			fmt.Printf("Delete context %q? [y/N] ", name)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
-				style.Info("Cancelled.")
-				return nil
-			}
+		if err := confirmAction(cmd, fmt.Sprintf("Delete context %q?", name)); err != nil {
+			return err
 		}
 
 		// Delete cached token

@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"strconv"
-	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -25,16 +22,8 @@ var projectDeleteCmd = &cobra.Command{
 			return fmt.Errorf("invalid project ID: %w", err)
 		}
 
-		autoConfirm, _ := cmd.Flags().GetBool("yes")
-		if !autoConfirm {
-			fmt.Fprintf(os.Stderr, "Delete project %d? [y/N] ", id)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
-				style.Info("Cancelled.")
-				return nil
-			}
+		if err := confirmAction(cmd, fmt.Sprintf("Delete project %d?", id)); err != nil {
+			return err
 		}
 
 		apiClient, err := client.NewAuthenticatedClient()
