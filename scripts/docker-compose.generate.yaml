@@ -1,6 +1,6 @@
 services:
   semaphore:
-    image: semaphoreui/semaphore:v2.16.51
+    image: semaphoreui/semaphore:v2.18.20
     ports:
       - "3000:3000"
     environment:

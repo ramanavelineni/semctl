@@ -18,6 +18,16 @@ import (
 // swagger:model Integration
 type Integration struct {
 
+	// auth header
+	AuthHeader string `json:"auth_header,omitempty"`
+
+	// auth method
+	// Example: none
+	AuthMethod string `json:"auth_method,omitempty"`
+
+	// auth secret id
+	AuthSecretID *int64 `json:"auth_secret_id,omitempty"`
+
 	// id
 	ID int64 `json:"id,omitempty"`
 
@@ -28,6 +38,9 @@ type Integration struct {
 	// project id
 	// Minimum: 1
 	ProjectID int64 `json:"project_id,omitempty"`
+
+	// searchable
+	Searchable bool `json:"searchable,omitempty"`
 
 	// task params
 	TaskParams *TaskPrams `json:"task_params,omitempty"`

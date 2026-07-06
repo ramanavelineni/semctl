@@ -71,7 +71,7 @@ var projectUpdateCmd = &cobra.Command{
 				}
 				req.Alert = b
 			case "alert_chat":
-				req.AlertChat = value
+				req.AlertChat = &value
 			case "max_parallel_tasks":
 				n, err := strconv.ParseInt(value, 10, 64)
 				if err != nil {

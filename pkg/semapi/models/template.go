@@ -45,6 +45,9 @@ type Template struct {
 	// Minimum: 1
 	EnvironmentID int64 `json:"environment_id,omitempty"`
 
+	// environment ids
+	EnvironmentIds []int64 `json:"environment_ids"`
+
 	// git branch
 	// Example: main
 	GitBranch string `json:"git_branch,omitempty"`
@@ -81,6 +84,9 @@ type Template struct {
 	// survey vars
 	SurveyVars []*TemplateSurveyVar `json:"survey_vars"`
 
+	// task params
+	TaskParams *TaskPrams `json:"task_params,omitempty"`
+
 	// type
 	// Enum: ["","build","deploy"]
 	Type string `json:"type,omitempty"`
@@ -114,6 +120,10 @@ func (m *Template) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateSurveyVars(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateTaskParams(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -208,6 +218,29 @@ func (m *Template) validateSurveyVars(formats strfmt.Registry) error {
 			}
 		}
 
+	}
+
+	return nil
+}
+
+func (m *Template) validateTaskParams(formats strfmt.Registry) error {
+	if typeutils.IsZero(m.TaskParams) { // not required
+		return nil
+	}
+
+	if m.TaskParams != nil {
+		if err := m.TaskParams.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("task_params")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("task_params")
+			}
+
+			return err
+		}
 	}
 
 	return nil
@@ -308,6 +341,10 @@ func (m *Template) ContextValidate(ctx context.Context, formats strfmt.Registry)
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateTaskParams(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateVaults(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -342,6 +379,31 @@ func (m *Template) contextValidateSurveyVars(ctx context.Context, formats strfmt
 			}
 		}
 
+	}
+
+	return nil
+}
+
+func (m *Template) contextValidateTaskParams(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.TaskParams != nil {
+
+		if typeutils.IsZero(m.TaskParams) { // not required
+			return nil
+		}
+
+		if err := m.TaskParams.ContextValidate(ctx, formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("task_params")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("task_params")
+			}
+
+			return err
+		}
 	}
 
 	return nil

@@ -30,7 +30,7 @@ var projectCreateCmd = &cobra.Command{
 			Name:      name,
 			Type:      projType,
 			Alert:     alert,
-			AlertChat: alertChat,
+			AlertChat: &alertChat,
 		}
 		if cmd.Flags().Changed("max-parallel-tasks") {
 			req.MaxParallelTasks = &maxParallel

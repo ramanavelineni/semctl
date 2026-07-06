@@ -15,6 +15,7 @@ import (
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/operations"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
+	"github.com/ramanavelineni/semctl/pkg/semapi/client/runner"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/schedule"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/task"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
@@ -72,6 +73,7 @@ func New(transport runtime.ContextualTransport, formats strfmt.Registry) *Semapi
 	cli.Operations = operations.New(transport, formats)
 	cli.Project = project.New(transport, formats)
 	cli.Repository = repository.New(transport, formats)
+	cli.Runner = runner.New(transport, formats)
 	cli.Schedule = schedule.New(transport, formats)
 	cli.Task = task.New(transport, formats)
 	cli.Template = template.New(transport, formats)
@@ -150,6 +152,8 @@ type Semapi struct {
 
 	Repository repository.ClientService
 
+	Runner runner.ClientService
+
 	Schedule schedule.ClientService
 
 	Task task.ClientService
@@ -173,6 +177,7 @@ func (c *Semapi) SetTransport(transport runtime.ContextualTransport) {
 	c.Operations.SetTransport(transport)
 	c.Project.SetTransport(transport)
 	c.Repository.SetTransport(transport)
+	c.Runner.SetTransport(transport)
 	c.Schedule.SetTransport(transport)
 	c.Task.SetTransport(transport)
 	c.Template.SetTransport(transport)

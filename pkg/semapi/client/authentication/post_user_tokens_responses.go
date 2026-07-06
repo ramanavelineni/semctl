@@ -3,6 +3,7 @@
 package authentication
 
 import (
+	"context"
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/strfmt"
+	"github.com/go-openapi/swag/jsonutils"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 )
 
@@ -97,5 +99,43 @@ func (o *PostUserTokensCreated) readResponse(response runtime.ClientResponse, co
 		return err
 	}
 
+	return nil
+}
+
+// PostUserTokensBody post user tokens body
+//
+// swagger:model PostUserTokensBody
+type PostUserTokensBody struct {
+
+	// name
+	// Example: my CI token
+	Name string `json:"name,omitempty"`
+}
+
+// Validate validates this post user tokens body
+func (o *PostUserTokensBody) Validate(formats strfmt.Registry) error {
+	return nil
+}
+
+// ContextValidate validates this post user tokens body based on context it is used
+func (o *PostUserTokensBody) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	return nil
+}
+
+// MarshalBinary interface implementation
+func (o *PostUserTokensBody) MarshalBinary() ([]byte, error) {
+	if o == nil {
+		return nil, nil
+	}
+	return jsonutils.WriteJSON(o)
+}
+
+// UnmarshalBinary interface implementation
+func (o *PostUserTokensBody) UnmarshalBinary(b []byte) error {
+	var res PostUserTokensBody
+	if err := jsonutils.ReadJSON(b, &res); err != nil {
+		return err
+	}
+	*o = res
 	return nil
 }

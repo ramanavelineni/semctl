@@ -22,7 +22,7 @@ type ProjectRequest struct {
 
 	// alert chat
 	// Example: Test
-	AlertChat string `json:"alert_chat,omitempty"`
+	AlertChat *string `json:"alert_chat,omitempty"`
 
 	// Create Demo project resources?
 	Demo bool `json:"demo,omitempty"`

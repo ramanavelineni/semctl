@@ -92,6 +92,12 @@ type ClientService interface {
 	// GetUserContext fetch logged in user.
 	GetUserContext(ctx context.Context, params *GetUserParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUserOK, error)
 
+	// GetUserOptions fetches the current user s stored options.
+	GetUserOptions(params *GetUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUserOptionsOK, error)
+
+	// GetUserOptionsContext fetches the current user s stored options.
+	GetUserOptionsContext(ctx context.Context, params *GetUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUserOptionsOK, error)
+
 	// GetUsers fetches all users.
 	GetUsers(params *GetUsersParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUsersOK, error)
 
@@ -103,6 +109,12 @@ type ClientService interface {
 
 	// GetUsersUserIDContext fetches a user profile.
 	GetUsersUserIDContext(ctx context.Context, params *GetUsersUserIDParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUsersUserIDOK, error)
+
+	// PostUserOptions stores a single option for the current user.
+	PostUserOptions(params *PostUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostUserOptionsOK, error)
+
+	// PostUserOptionsContext stores a single option for the current user.
+	PostUserOptionsContext(ctx context.Context, params *PostUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostUserOptionsOK, error)
 
 	// PostUsers creates a user.
 	PostUsers(params *PostUsersParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostUsersCreated, error)
@@ -251,6 +263,75 @@ func (a *Client) GetUserContext(ctx context.Context, params *GetUserParams, auth
 	panic(msg)
 }
 
+// GetUserOptions fetches the current user s stored options.
+//
+// Returns the per-user options of the authenticated user as a key/value map. Keys are returned without the internal `user<id>.` namespace prefix. Returns an empty object when the user has no stored options.
+// .
+//
+// This method does not support injected context.
+// However, timeout and opentracing contexts are honored whenever enabled.
+//
+// If you need to pass a specific context, use [Client.GetUserOptionsContext] instead.
+func (a *Client) GetUserOptions(params *GetUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUserOptionsOK, error) {
+	var ctx context.Context
+	if params.inner.ctx != nil {
+		ctx = params.inner.ctx
+	} else {
+		ctx = context.Background()
+	}
+
+	return a.GetUserOptionsContext(ctx, params, authInfo, opts...)
+}
+
+// GetUserOptionsContext fetches the current user s stored options.
+//
+// Returns the per-user options of the authenticated user as a key/value map. Keys are returned without the internal `user<id>.` namespace prefix. Returns an empty object when the user has no stored options.
+// .
+//
+// Do not use the deprecated [GetUserOptionsParams.Context] with this method: it would be ignored.
+func (a *Client) GetUserOptionsContext(ctx context.Context, params *GetUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*GetUserOptionsOK, error) {
+	// NOTE: parameters are not validated before sending
+	if params == nil {
+		params = NewGetUserOptionsParams()
+	}
+
+	op := &runtime.ClientOperation{
+		ID:                 "GetUserOptions",
+		Method:             "GET",
+		PathPattern:        "/user/options",
+		ProducesMediaTypes: []string{"application/json", "text/plain; charset=utf-8"},
+		ConsumesMediaTypes: []string{"application/json"},
+		Schemes:            []string{"http", "https"},
+		Params:             params,
+		Reader:             &GetUserOptionsReader{formats: a.formats},
+		AuthInfo:           authInfo,
+		Client:             params.HTTPClient,
+	}
+
+	for _, opt := range opts {
+		opt(op)
+	}
+
+	result, err := a.transport.SubmitContext(ctx, op)
+	if err != nil {
+		return nil, err
+	}
+
+	// only one success response has to be checked
+	success, ok := result.(*GetUserOptionsOK)
+	if ok {
+		return success, nil
+	}
+
+	// unexpected success response.
+
+	// no default response is defined.
+	//
+	// safeguard: normally, in the absence of a default response, unknown success responses return an error above: so this is a codegen issue
+	msg := fmt.Sprintf("unexpected success response for GetUserOptions: API contract not enforced by server. Client expected to get an error, but got: %T", result)
+	panic(msg)
+}
+
 // GetUsers fetches all users.
 //
 // This method does not support injected context.
@@ -374,6 +455,75 @@ func (a *Client) GetUsersUserIDContext(ctx context.Context, params *GetUsersUser
 	//
 	// safeguard: normally, in the absence of a default response, unknown success responses return an error above: so this is a codegen issue
 	msg := fmt.Sprintf("unexpected success response for GetUsersUserID: API contract not enforced by server. Client expected to get an error, but got: %T", result)
+	panic(msg)
+}
+
+// PostUserOptions stores a single option for the current user.
+//
+// Stores one option for the authenticated user. The `key` is an allowlisted suffix (e.g. `nav.unpinnedItems`); the server prepends the user namespace, so a request can never read or write another user's options or a global option. Unknown keys are rejected with 400.
+// .
+//
+// This method does not support injected context.
+// However, timeout and opentracing contexts are honored whenever enabled.
+//
+// If you need to pass a specific context, use [Client.PostUserOptionsContext] instead.
+func (a *Client) PostUserOptions(params *PostUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostUserOptionsOK, error) {
+	var ctx context.Context
+	if params.inner.ctx != nil {
+		ctx = params.inner.ctx
+	} else {
+		ctx = context.Background()
+	}
+
+	return a.PostUserOptionsContext(ctx, params, authInfo, opts...)
+}
+
+// PostUserOptionsContext stores a single option for the current user.
+//
+// Stores one option for the authenticated user. The `key` is an allowlisted suffix (e.g. `nav.unpinnedItems`); the server prepends the user namespace, so a request can never read or write another user's options or a global option. Unknown keys are rejected with 400.
+// .
+//
+// Do not use the deprecated [PostUserOptionsParams.Context] with this method: it would be ignored.
+func (a *Client) PostUserOptionsContext(ctx context.Context, params *PostUserOptionsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PostUserOptionsOK, error) {
+	// NOTE: parameters are not validated before sending
+	if params == nil {
+		params = NewPostUserOptionsParams()
+	}
+
+	op := &runtime.ClientOperation{
+		ID:                 "PostUserOptions",
+		Method:             "POST",
+		PathPattern:        "/user/options",
+		ProducesMediaTypes: []string{"application/json", "text/plain; charset=utf-8"},
+		ConsumesMediaTypes: []string{"application/json"},
+		Schemes:            []string{"http", "https"},
+		Params:             params,
+		Reader:             &PostUserOptionsReader{formats: a.formats},
+		AuthInfo:           authInfo,
+		Client:             params.HTTPClient,
+	}
+
+	for _, opt := range opts {
+		opt(op)
+	}
+
+	result, err := a.transport.SubmitContext(ctx, op)
+	if err != nil {
+		return nil, err
+	}
+
+	// only one success response has to be checked
+	success, ok := result.(*PostUserOptionsOK)
+	if ok {
+		return success, nil
+	}
+
+	// unexpected success response.
+
+	// no default response is defined.
+	//
+	// safeguard: normally, in the absence of a default response, unknown success responses return an error above: so this is a codegen issue
+	msg := fmt.Sprintf("unexpected success response for PostUserOptions: API contract not enforced by server. Client expected to get an error, but got: %T", result)
 	panic(msg)
 }
 

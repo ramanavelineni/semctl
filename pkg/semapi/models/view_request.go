@@ -17,6 +17,10 @@ import (
 // swagger:model ViewRequest
 type ViewRequest struct {
 
+	// id
+	// Minimum: 1
+	ID int64 `json:"id,omitempty"`
+
 	// position
 	// Minimum: 1
 	Position int64 `json:"position,omitempty"`
@@ -34,6 +38,10 @@ type ViewRequest struct {
 func (m *ViewRequest) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateID(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validatePosition(formats); err != nil {
 		res = append(res, err)
 	}
@@ -45,6 +53,18 @@ func (m *ViewRequest) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *ViewRequest) validateID(formats strfmt.Registry) error {
+	if typeutils.IsZero(m.ID) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("id", "body", m.ID, 1, false); err != nil {
+		return err
+	}
+
 	return nil
 }
 

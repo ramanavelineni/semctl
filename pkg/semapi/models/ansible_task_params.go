@@ -26,6 +26,9 @@ type AnsibleTaskParams struct {
 	// limit
 	Limit []string `json:"limit"`
 
+	// skip galaxy install
+	SkipGalaxyInstall bool `json:"skip_galaxy_install,omitempty"`
+
 	// skip tags
 	SkipTags []string `json:"skip_tags"`
 

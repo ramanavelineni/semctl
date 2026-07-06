@@ -52,7 +52,7 @@ var projectShowCmd = &cobra.Command{
 			{"Name", p.Name},
 			{"Type", p.Type},
 			{"Alert", strconv.FormatBool(p.Alert)},
-			{"Alert Chat", p.AlertChat},
+			{"Alert Chat", strDeref(p.AlertChat)},
 			{"Max Parallel Tasks", maxParallel},
 			{"Created", p.Created},
 		}
@@ -64,4 +64,12 @@ var projectShowCmd = &cobra.Command{
 
 func init() {
 	projectCmd.AddCommand(projectShowCmd)
+}
+
+// strDeref returns the string behind p, or "" when nil.
+func strDeref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
