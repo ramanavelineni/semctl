@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
+
+	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -25,6 +28,33 @@ var repoCreateCmd = &cobra.Command{
 		gitURL, _ := cmd.Flags().GetString("git-url")
 		gitBranch, _ := cmd.Flags().GetString("git-branch")
 		sshKeyID, _ := cmd.Flags().GetInt64("ssh-key-id")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "" || gitURL == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			sshKeyIDStr := ""
+			if sshKeyID != 0 {
+				sshKeyIDStr = strconv.FormatInt(sshKeyID, 10)
+			}
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Repository name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewInput().Title("Git URL").Value(&gitURL).
+						Validate(requireValue("git URL")),
+					huh.NewInput().Title("Git branch").Value(&gitBranch),
+					huh.NewInput().Title("SSH key ID").
+						Description("semctl key list shows available keys").
+						Value(&sshKeyIDStr).
+						Validate(optionalInt("SSH key ID")),
+				).Title("New repository"),
+			).Run(); err != nil {
+				return err
+			}
+			sshKeyID = parseOptionalInt(sshKeyIDStr)
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")

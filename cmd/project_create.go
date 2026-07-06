@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
@@ -21,6 +23,22 @@ var projectCreateCmd = &cobra.Command{
 		alert, _ := cmd.Flags().GetBool("alert")
 		alertChat, _ := cmd.Flags().GetString("alert-chat")
 		maxParallel, _ := cmd.Flags().GetInt64("max-parallel-tasks")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Project name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewConfirm().Title("Enable alerts?").Value(&alert),
+				).Title("New project"),
+			).Run(); err != nil {
+				return err
+			}
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")

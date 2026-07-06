@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/variable_group"
@@ -25,6 +27,24 @@ var envCreateCmd = &cobra.Command{
 		jsonVars, _ := cmd.Flags().GetString("json-vars")
 		env, _ := cmd.Flags().GetString("env")
 		password, _ := cmd.Flags().GetString("password")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Environment name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewText().Title("Extra variables (JSON, optional)").
+						Description(`e.g. {"key": "value"}`).
+						Value(&jsonVars),
+				).Title("New environment"),
+			).Run(); err != nil {
+				return err
+			}
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")

@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
+
+	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -27,6 +30,39 @@ var inventoryCreateCmd = &cobra.Command{
 		sshKeyID, _ := cmd.Flags().GetInt64("ssh-key-id")
 		becomeKeyID, _ := cmd.Flags().GetInt64("become-key-id")
 		repoID, _ := cmd.Flags().GetInt64("repository-id")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "" || invType == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			sshKeyIDStr := ""
+			if sshKeyID != 0 {
+				sshKeyIDStr = strconv.FormatInt(sshKeyID, 10)
+			}
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Inventory name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewSelect[string]().Title("Type").
+						Options(
+							huh.NewOption("static", "static"),
+							huh.NewOption("static-yaml", "static-yaml"),
+							huh.NewOption("file", "file"),
+							huh.NewOption("terraform-workspace", "terraform-workspace"),
+						).
+						Value(&invType),
+					huh.NewText().Title("Inventory content (or file path for type=file)").Value(&invContent),
+					huh.NewInput().Title("SSH key ID").
+						Description("semctl key list shows available keys").
+						Value(&sshKeyIDStr).
+						Validate(optionalInt("SSH key ID")),
+				).Title("New inventory"),
+			).Run(); err != nil {
+				return err
+			}
+			sshKeyID = parseOptionalInt(sshKeyIDStr)
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")

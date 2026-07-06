@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/output"
@@ -28,6 +31,26 @@ store it safely; it is what the runner process uses to authenticate.`,
 		maxParallel, _ := cmd.Flags().GetInt64("max-parallel-tasks")
 		webhook, _ := cmd.Flags().GetString("webhook")
 		inactive, _ := cmd.Flags().GetBool("inactive")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			tagsStr := strings.Join(tags, ",")
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Runner name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewInput().Title("Tags (comma-separated, optional)").Value(&tagsStr),
+				).Title("New runner"),
+			).Run(); err != nil {
+				return err
+			}
+			if tagsStr != "" {
+				tags = strings.Split(tagsStr, ",")
+			}
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")
