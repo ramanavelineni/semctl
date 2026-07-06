@@ -200,6 +200,7 @@ Precedence: command-line flags > environment variables > config file.
 |--------|--------------|-------|
 | v0.1.0 | v2.16.51     | Initial release |
 | v0.2.0 | v2.16.51     | Declarative apply, variable groups, validate |
+| v0.3.0 | v2.16.51     | Security & CI/CD hardening: env var auth, token-only login, `task run --wait`, strict apply semantics. Breaking: `--project` is now string (ID or name), cancelled prompts exit non-zero, unset `${VAR}` in apply configs is an error |
 
 The API client is generated from the Semaphore UI OpenAPI spec. Each semctl release is tested against the listed Semaphore UI version. Older or newer versions of Semaphore UI may work but are not guaranteed.
 
