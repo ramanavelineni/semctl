@@ -9,6 +9,7 @@ import (
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
+	"github.com/ramanavelineni/semctl/pkg/semapi/client/schedule"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/variable_group"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -34,6 +35,7 @@ type Reconciler struct {
 	ExistingRepoByID      map[int64]*models.Repository
 	ExistingInventoryByID map[int64]*models.Inventory
 	ExistingTemplateByID  map[int64]*models.Template
+	ExistingScheduleByID  map[int64]*models.Schedule
 }
 
 // NewReconciler creates a new reconciler.
@@ -50,6 +52,7 @@ func NewReconciler(client *apiclient.Semapi, config *ApplyConfig) *Reconciler {
 		ExistingRepoByID:      make(map[int64]*models.Repository),
 		ExistingInventoryByID: make(map[int64]*models.Inventory),
 		ExistingTemplateByID:  make(map[int64]*models.Template),
+		ExistingScheduleByID:  make(map[int64]*models.Schedule),
 	}
 }
 
@@ -105,17 +108,83 @@ func (r *Reconciler) BuildPlan() (*Plan, error) {
 		return nil, fmt.Errorf("reconciling templates: %w", err)
 	}
 
-	// Schedules are always create-only (no list API)
-	for i, s := range r.config.Schedules {
-		plan.Actions = append(plan.Actions, ResourceAction{
-			Type:   ResourceSchedule,
-			Action: ActionCreate,
-			Label:  s.Name,
-			Index:  i,
-		})
+	if err := r.reconcileSchedules(plan); err != nil {
+		return nil, fmt.Errorf("reconciling schedules: %w", err)
 	}
 
 	return plan, nil
+}
+
+// reconcileSchedules diffs config schedules against the server by name.
+// Must run after reconcileTemplates (template name refs resolve via the maps).
+func (r *Reconciler) reconcileSchedules(plan *Plan) error {
+	params := schedule.NewGetProjectProjectIDSchedulesParams()
+	params.ProjectID = r.projectID
+	resp, err := r.client.Schedule.GetProjectProjectIDSchedules(params, nil)
+	if err != nil {
+		return err
+	}
+
+	existing := resp.GetPayload()
+	for _, s := range existing {
+		r.ExistingScheduleByID[s.ID] = s
+	}
+
+	for i, entry := range r.config.Schedules {
+		matches := findSchedulesByName(existing, entry.Name)
+
+		if entry.State == "absent" {
+			// Delete every match: duplicates may exist from versions where
+			// schedules could not be reconciled and re-applies created copies.
+			for _, m := range matches {
+				plan.Actions = append(plan.Actions, ResourceAction{
+					Type:       ResourceSchedule,
+					Action:     ActionDelete,
+					Label:      entry.Name,
+					ExistingID: m.ID,
+					Index:      i,
+				})
+			}
+			continue
+		}
+
+		if len(matches) == 0 {
+			plan.Actions = append(plan.Actions, ResourceAction{
+				Type:   ResourceSchedule,
+				Action: ActionCreate,
+				Label:  entry.Name,
+				Index:  i,
+			})
+			continue
+		}
+
+		first := matches[0]
+		desc := ""
+		if len(matches) > 1 {
+			desc = fmt.Sprintf("%d schedules share this name; managing ID %d — set state: absent once to delete all copies, then re-apply", len(matches), first.ID)
+		}
+
+		if r.scheduleNeedsUpdate(entry, first) {
+			plan.Actions = append(plan.Actions, ResourceAction{
+				Type:        ResourceSchedule,
+				Action:      ActionUpdate,
+				Label:       entry.Name,
+				Description: desc,
+				ExistingID:  first.ID,
+				Index:       i,
+			})
+		} else {
+			plan.Actions = append(plan.Actions, ResourceAction{
+				Type:        ResourceSchedule,
+				Action:      ActionSkip,
+				Label:       entry.Name,
+				Description: desc,
+				ExistingID:  first.ID,
+				Index:       i,
+			})
+		}
+	}
+	return nil
 }
 
 // resolveProject finds an existing project by name or plans a create/delete.
@@ -233,6 +302,25 @@ func (r *Reconciler) buildAllAsCreate(plan *Plan) {
 // buildAllAsDelete fetches all existing child resources and marks them for deletion.
 func (r *Reconciler) buildAllAsDelete(plan *Plan) error {
 	pid := r.projectID
+
+	// Schedules (deleted first — they reference templates)
+	schedResp, err := r.client.Schedule.GetProjectProjectIDSchedules(
+		schedule.NewGetProjectProjectIDSchedulesParams().WithProjectID(pid), nil)
+	if err != nil {
+		return fmt.Errorf("listing schedules: %w", err)
+	}
+	for _, s := range schedResp.GetPayload() {
+		label := s.Name
+		if label == "" {
+			label = fmt.Sprintf("schedule %d", s.ID)
+		}
+		plan.Actions = append(plan.Actions, ResourceAction{
+			Type:       ResourceSchedule,
+			Action:     ActionDelete,
+			Label:      label,
+			ExistingID: s.ID,
+		})
+	}
 
 	// Templates
 	tplResp, err := r.client.Template.GetProjectProjectIDTemplates(
@@ -724,6 +812,22 @@ func (r *Reconciler) templateNeedsUpdate(entry TemplateEntry, existing *models.T
 	return false
 }
 
+// scheduleNeedsUpdate returns true if any specified schedule field differs
+// from the existing server-side schedule.
+func (r *Reconciler) scheduleNeedsUpdate(entry ScheduleEntry, existing *models.Schedule) bool {
+	if entry.CronFormat != "" && entry.CronFormat != existing.CronFormat {
+		return true
+	}
+	resolvedTplID := r.resolveTemplateID(entry.Template, entry.TemplateID)
+	if resolvedTplID != 0 && resolvedTplID != existing.TemplateID {
+		return true
+	}
+	if entry.Active != nil && *entry.Active != existing.Active {
+		return true
+	}
+	return false
+}
+
 // Cross-ref resolution helpers
 
 func (r *Reconciler) resolveKeyID(name string, explicitID int64) int64 {
@@ -831,4 +935,16 @@ func findTemplateByName(templates []*models.Template, name string) *models.Templ
 		}
 	}
 	return nil
+}
+
+// findSchedulesByName returns ALL schedules matching the name: duplicates can
+// exist server-side (schedule names are not unique in Semaphore).
+func findSchedulesByName(schedules []*models.Schedule, name string) []*models.Schedule {
+	var result []*models.Schedule
+	for _, s := range schedules {
+		if strings.EqualFold(s.Name, name) {
+			result = append(result, s)
+		}
+	}
+	return result
 }

@@ -179,6 +179,25 @@ func TestExpandEnvEscapeAndBareDollar(t *testing.T) {
 	}
 }
 
+func TestValidateScheduleAbsent(t *testing.T) {
+	// state: absent needs only a name — cron_format/template are for creation
+	cfg := &ApplyConfig{
+		Project:   "Test",
+		Schedules: []ScheduleEntry{{Name: "old-schedule", State: "absent"}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("absent schedule should not require cron_format/template: %v", err)
+	}
+
+	cfg = &ApplyConfig{
+		Project:   "Test",
+		Schedules: []ScheduleEntry{{Name: "s"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("present schedule without cron_format should fail validation")
+	}
+}
+
 func TestValidateRejectsExportPlaceholder(t *testing.T) {
 	cfg := &ApplyConfig{
 		Project: "Test",

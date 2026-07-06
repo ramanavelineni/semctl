@@ -58,8 +58,9 @@ func (e *Executor) Execute(plan *Plan) int {
 		}
 	}
 
-	// Delete order (reverse): templates → inventories → repos → envs → keys → project
+	// Delete order (reverse): schedules → templates → inventories → repos → envs → keys → project
 	deleteOrder := []ResourceType{
+		ResourceSchedule,
 		ResourceTemplate,
 		ResourceInventory,
 		ResourceRepository,
@@ -136,8 +137,24 @@ func (e *Executor) executeProject(action ResourceAction) error {
 }
 
 func (e *Executor) executeKey(action ResourceAction) error {
-	entry := e.config.Keys[action.Index]
 	pid := e.recon.ProjectID()
+
+	// Deletes must not touch the config: project-deletion plans reference
+	// server-side resources that have no config entry (Index would be stale).
+	if action.Action == ActionDelete {
+		params := key_store.NewDeleteProjectProjectIDKeysKeyIDParams()
+		params.ProjectID = pid
+		params.KeyID = action.ExistingID
+
+		_, err := e.client.KeyStore.DeleteProjectProjectIDKeysKeyID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Deleted key %q (ID: %d)", action.Label, action.ExistingID))
+		return nil
+	}
+
+	entry := e.config.Keys[action.Index]
 
 	switch action.Action {
 	case ActionCreate:
@@ -181,17 +198,6 @@ func (e *Executor) executeKey(action ResourceAction) error {
 			return err
 		}
 		style.Success(fmt.Sprintf("Updated key %q (ID: %d)", entry.Name, action.ExistingID))
-
-	case ActionDelete:
-		params := key_store.NewDeleteProjectProjectIDKeysKeyIDParams()
-		params.ProjectID = pid
-		params.KeyID = action.ExistingID
-
-		_, err := e.client.KeyStore.DeleteProjectProjectIDKeysKeyID(params, nil)
-		if err != nil {
-			return err
-		}
-		style.Success(fmt.Sprintf("Deleted key %q (ID: %d)", entry.Name, action.ExistingID))
 	}
 	return nil
 }
@@ -291,8 +297,22 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 }
 
 func (e *Executor) executeRepository(action ResourceAction) error {
-	entry := e.config.Repositories[action.Index]
 	pid := e.recon.ProjectID()
+
+	if action.Action == ActionDelete {
+		params := repository.NewDeleteProjectProjectIDRepositoriesRepositoryIDParams()
+		params.ProjectID = pid
+		params.RepositoryID = action.ExistingID
+
+		_, err := e.client.Repository.DeleteProjectProjectIDRepositoriesRepositoryID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Deleted repository %q (ID: %d)", action.Label, action.ExistingID))
+		return nil
+	}
+
+	entry := e.config.Repositories[action.Index]
 	sshKeyID := e.recon.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
 
 	switch action.Action {
@@ -345,24 +365,27 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 			return err
 		}
 		style.Success(fmt.Sprintf("Updated repository %q (ID: %d)", entry.Name, action.ExistingID))
-
-	case ActionDelete:
-		params := repository.NewDeleteProjectProjectIDRepositoriesRepositoryIDParams()
-		params.ProjectID = pid
-		params.RepositoryID = action.ExistingID
-
-		_, err := e.client.Repository.DeleteProjectProjectIDRepositoriesRepositoryID(params, nil)
-		if err != nil {
-			return err
-		}
-		style.Success(fmt.Sprintf("Deleted repository %q (ID: %d)", entry.Name, action.ExistingID))
 	}
 	return nil
 }
 
 func (e *Executor) executeInventory(action ResourceAction) error {
-	entry := e.config.Inventories[action.Index]
 	pid := e.recon.ProjectID()
+
+	if action.Action == ActionDelete {
+		params := inventory.NewDeleteProjectProjectIDInventoryInventoryIDParams()
+		params.ProjectID = pid
+		params.InventoryID = action.ExistingID
+
+		_, err := e.client.Inventory.DeleteProjectProjectIDInventoryInventoryID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Deleted inventory %q (ID: %d)", action.Label, action.ExistingID))
+		return nil
+	}
+
+	entry := e.config.Inventories[action.Index]
 	sshKeyID := e.recon.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
 	becomeKeyID := e.recon.resolveKeyID(entry.BecomeKey, entry.BecomeKeyID)
 	repoID := e.recon.resolveRepoID(entry.Repository, entry.RepositoryID)
@@ -421,24 +444,27 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 			return err
 		}
 		style.Success(fmt.Sprintf("Updated inventory %q (ID: %d)", entry.Name, action.ExistingID))
-
-	case ActionDelete:
-		params := inventory.NewDeleteProjectProjectIDInventoryInventoryIDParams()
-		params.ProjectID = pid
-		params.InventoryID = action.ExistingID
-
-		_, err := e.client.Inventory.DeleteProjectProjectIDInventoryInventoryID(params, nil)
-		if err != nil {
-			return err
-		}
-		style.Success(fmt.Sprintf("Deleted inventory %q (ID: %d)", entry.Name, action.ExistingID))
 	}
 	return nil
 }
 
 func (e *Executor) executeTemplate(action ResourceAction) error {
-	entry := e.config.Templates[action.Index]
 	pid := e.recon.ProjectID()
+
+	if action.Action == ActionDelete {
+		params := template.NewDeleteProjectProjectIDTemplatesTemplateIDParams()
+		params.ProjectID = pid
+		params.TemplateID = action.ExistingID
+
+		_, err := e.client.Template.DeleteProjectProjectIDTemplatesTemplateID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Deleted template %q (ID: %d)", action.Label, action.ExistingID))
+		return nil
+	}
+
+	entry := e.config.Templates[action.Index]
 	repoID := e.recon.resolveRepoID(entry.Repository, entry.RepositoryID)
 	envID := e.recon.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID)
 	invID := e.recon.resolveInventoryID(entry.Inventory, entry.InventoryID)
@@ -540,28 +566,27 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			return err
 		}
 		style.Success(fmt.Sprintf("Updated template %q (ID: %d)", entry.Name, action.ExistingID))
-
-	case ActionDelete:
-		params := template.NewDeleteProjectProjectIDTemplatesTemplateIDParams()
-		params.ProjectID = pid
-		params.TemplateID = action.ExistingID
-
-		_, err := e.client.Template.DeleteProjectProjectIDTemplatesTemplateID(params, nil)
-		if err != nil {
-			return err
-		}
-		style.Success(fmt.Sprintf("Deleted template %q (ID: %d)", entry.Name, action.ExistingID))
 	}
 	return nil
 }
 
 func (e *Executor) executeSchedule(action ResourceAction) error {
-	if action.Action != ActionCreate {
+	pid := e.recon.ProjectID()
+
+	if action.Action == ActionDelete {
+		params := schedule.NewDeleteProjectProjectIDSchedulesScheduleIDParams()
+		params.ProjectID = pid
+		params.ScheduleID = action.ExistingID
+
+		_, err := e.client.Schedule.DeleteProjectProjectIDSchedulesScheduleID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Deleted schedule %q (ID: %d)", action.Label, action.ExistingID))
 		return nil
 	}
 
 	entry := e.config.Schedules[action.Index]
-	pid := e.recon.ProjectID()
 	tplID := e.recon.resolveTemplateID(entry.Template, entry.TemplateID)
 
 	active := true
@@ -569,25 +594,54 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 		active = *entry.Active
 	}
 
-	req := &models.ScheduleRequest{
-		ProjectID:  pid,
-		TemplateID: tplID,
-		Name:       entry.Name,
-		CronFormat: entry.CronFormat,
-		Active:     active,
+	switch action.Action {
+	case ActionCreate:
+		req := &models.ScheduleRequest{
+			ProjectID:  pid,
+			TemplateID: tplID,
+			Name:       entry.Name,
+			CronFormat: entry.CronFormat,
+			Active:     active,
+		}
+
+		params := schedule.NewPostProjectProjectIDSchedulesParams()
+		params.ProjectID = pid
+		params.Schedule = req
+
+		resp, err := e.client.Schedule.PostProjectProjectIDSchedules(params, nil)
+		if err != nil {
+			return err
+		}
+
+		s := resp.GetPayload()
+		style.Success(fmt.Sprintf("Created schedule %q (ID: %d)", s.Name, s.ID))
+
+	case ActionUpdate:
+		req := &models.ScheduleRequest{
+			ID:         action.ExistingID,
+			ProjectID:  pid,
+			TemplateID: tplID,
+			Name:       entry.Name,
+			CronFormat: entry.CronFormat,
+			Active:     active,
+		}
+		if existing := e.recon.ExistingScheduleByID[action.ExistingID]; existing != nil {
+			req.CronFormat = mergeStr(entry.CronFormat, existing.CronFormat)
+			req.TemplateID = mergeID(tplID, existing.TemplateID)
+			req.Active = mergeBool(entry.Active, existing.Active)
+		}
+
+		params := schedule.NewPutProjectProjectIDSchedulesScheduleIDParams()
+		params.ProjectID = pid
+		params.ScheduleID = action.ExistingID
+		params.Schedule = req
+
+		_, err := e.client.Schedule.PutProjectProjectIDSchedulesScheduleID(params, nil)
+		if err != nil {
+			return err
+		}
+		style.Success(fmt.Sprintf("Updated schedule %q (ID: %d)", entry.Name, action.ExistingID))
 	}
-
-	params := schedule.NewPostProjectProjectIDSchedulesParams()
-	params.ProjectID = pid
-	params.Schedule = req
-
-	resp, err := e.client.Schedule.PostProjectProjectIDSchedules(params, nil)
-	if err != nil {
-		return err
-	}
-
-	s := resp.GetPayload()
-	style.Success(fmt.Sprintf("Created schedule %q (ID: %d)", s.Name, s.ID))
 	return nil
 }
 

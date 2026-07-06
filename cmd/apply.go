@@ -23,11 +23,7 @@ independently in order. Directories are scanned for .yaml, .yml, and .json files
 
 ${VAR} references in config files are expanded from the environment.
 Referencing an unset variable is an error; write $${VAR} for a literal ${VAR}.
-Bare $WORD text (no braces) is left untouched.
-
-Note: schedules cannot be reconciled (the Semaphore API has no schedule list
-endpoint), so they are created on every apply. Use --skip-schedules when
-re-applying a file whose schedules already exist.`,
+Bare $WORD text (no braces) is left untouched.`,
 	Example: `  semctl apply -f project.yaml
   semctl apply -f keys.yaml -f templates.yaml
   semctl apply -f ./semaphore/
@@ -88,10 +84,6 @@ re-applying a file whose schedules already exist.`,
 
 			fmt.Fprint(os.Stderr, plan.FormatPlan())
 
-			if len(plan.ActionsByType(apply.ResourceSchedule)) > 0 {
-				style.Warning("Schedules cannot be reconciled on this Semaphore API version (no list endpoint): every apply CREATES them again. Re-applying this file will duplicate schedules — use --skip-schedules for repeat applies.")
-			}
-
 			if !plan.HasChanges() {
 				style.Success("No changes needed.")
 				continue
@@ -138,5 +130,5 @@ func init() {
 
 	applyCmd.Flags().StringArrayP("file", "f", nil, "config file or directory (can be specified multiple times)")
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
-	applyCmd.Flags().Bool("skip-schedules", false, "skip schedule resources (schedules cannot be reconciled and would be duplicated on re-apply)")
+	applyCmd.Flags().Bool("skip-schedules", false, "leave schedule resources unmanaged by this apply")
 }

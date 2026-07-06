@@ -70,14 +70,11 @@ Define your entire Semaphore project as code and apply it:
 semctl apply -f project.yaml              # apply a config file
 semctl apply -f project.yaml --dry-run    # preview changes without applying
 semctl apply -f ./config/                 # apply all files in a directory
-semctl apply -f project.yaml --skip-schedules  # re-apply without duplicating schedules
 semctl export -p 1 -o exported.yaml       # export existing project to YAML
 semctl validate -f project.yaml           # validate config file offline
 ```
 
-Resources are matched by name and created, updated, or deleted as needed. Updates merge over existing state — fields you omit keep their server-side values. `${VAR}` environment references are expanded before parsing; referencing an unset variable is an error (use `$${VAR}` for a literal). Set `state: absent` on any resource to delete it, or `project_state: absent` to delete the entire project and all its resources.
-
-Note: the Semaphore API has no schedule list endpoint, so schedules cannot be reconciled — each apply creates them anew. Use `--skip-schedules` on repeat applies.
+Resources are matched by name and created, updated, or deleted as needed — including schedules. Updates merge over existing state — fields you omit keep their server-side values. `${VAR}` environment references are expanded before parsing; referencing an unset variable is an error (use `$${VAR}` for a literal). Set `state: absent` on any resource to delete it, or `project_state: absent` to delete the entire project and all its resources.
 
 - [Example configuration](docs/example.yaml)
 - [Full schema reference](docs/apply-schema.md)
@@ -96,7 +93,7 @@ env:
   SEMCTL_API_TOKEN: ${{ secrets.SEMAPHORE_TOKEN }}
 
 steps:
-  - run: semctl apply -f semaphore/ --yes --skip-schedules
+  - run: semctl apply -f semaphore/ --yes
   - run: semctl -p "My Project" task run --template-id 5 --wait --wait-timeout 30m
 ```
 
@@ -200,6 +197,8 @@ Precedence: command-line flags > environment variables > config file.
 |--------|--------------|-------|
 | v0.1.0 | v2.16.51     | Initial release |
 | v0.2.0 | v2.16.51     | Declarative apply, variable groups, validate |
+| v0.3.0 | v2.16.51     | Security & CI/CD hardening: env var auth, token-only login, `task run --wait`, strict apply semantics. Breaking: `--project` is now string (ID or name), cancelled prompts exit non-zero, unset `${VAR}` in apply configs is an error |
+| v0.4.0 | v2.16.51     | Schedule reconciliation: apply diffs/updates/deletes schedules by name (no more duplicates on re-apply); export includes schedules |
 
 The API client is generated from the Semaphore UI OpenAPI spec. Each semctl release is tested against the listed Semaphore UI version. Older or newer versions of Semaphore UI may work but are not guaranteed.
 

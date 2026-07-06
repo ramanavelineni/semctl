@@ -9,6 +9,7 @@ import (
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/inventory"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
+	"github.com/ramanavelineni/semctl/pkg/semapi/client/schedule"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/variable_group"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -54,8 +55,10 @@ func ParseResourceFilter(s string) ([]ResourceType, error) {
 			rt = ResourceInventory
 		case "templates", "template", "tpl":
 			rt = ResourceTemplate
+		case "schedules", "schedule", "sched":
+			rt = ResourceSchedule
 		default:
-			return nil, fmt.Errorf("unknown resource type %q (valid: keys, variable_groups, repositories, inventories, templates)", part)
+			return nil, fmt.Errorf("unknown resource type %q (valid: keys, variable_groups, repositories, inventories, templates, schedules)", part)
 		}
 		if !seen[rt] {
 			seen[rt] = true
@@ -139,7 +142,14 @@ func (e *Exporter) Export(projectName string) (*ApplyConfig, error) {
 		cfg.Templates = convertTemplates(templates, repoIDToName, envIDToName, invIDToName, tplIDToName)
 	}
 
-	// Schedules not exported (no list API)
+	// Fetch schedules
+	if e.includeType(ResourceSchedule) {
+		schedules, err := e.fetchSchedules()
+		if err != nil {
+			return nil, fmt.Errorf("fetching schedules: %w", err)
+		}
+		cfg.Schedules = convertSchedules(schedules)
+	}
 
 	return cfg, nil
 }
@@ -200,6 +210,16 @@ func (e *Exporter) fetchTemplates() ([]*models.Template, error) {
 	params := template.NewGetProjectProjectIDTemplatesParams()
 	params.ProjectID = e.projectID
 	resp, err := e.client.Template.GetProjectProjectIDTemplates(params, nil)
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetPayload(), nil
+}
+
+func (e *Exporter) fetchSchedules() ([]*models.Schedule, error) {
+	params := schedule.NewGetProjectProjectIDSchedulesParams()
+	params.ProjectID = e.projectID
+	resp, err := e.client.Schedule.GetProjectProjectIDSchedules(params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +369,30 @@ func convertTemplates(templates []*models.Template, repoIDToName, envIDToName, i
 			entry.BuildTemplate = name
 		} else if t.BuildTemplateID != 0 {
 			entry.BuildTemplateID = t.BuildTemplateID
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
+// convertSchedules exports schedules. The list endpoint returns the template
+// name (tpl_name), so schedules reference templates by name; active is only
+// written when false (the default is true).
+func convertSchedules(schedules []*models.Schedule) []ScheduleEntry {
+	var result []ScheduleEntry
+	for _, s := range schedules {
+		entry := ScheduleEntry{
+			Name:       s.Name,
+			CronFormat: s.CronFormat,
+		}
+		if s.TplName != "" {
+			entry.Template = s.TplName
+		} else {
+			entry.TemplateID = s.TemplateID
+		}
+		if !s.Active {
+			active := false
+			entry.Active = &active
 		}
 		result = append(result, entry)
 	}

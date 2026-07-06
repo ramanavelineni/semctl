@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"gopkg.in/yaml.v3"
 )
 
@@ -57,6 +58,9 @@ func TestParseResourceFilterAliases(t *testing.T) {
 		{"template", ResourceTemplate},
 		{"templates", ResourceTemplate},
 		{"tpl", ResourceTemplate},
+		{"schedule", ResourceSchedule},
+		{"schedules", ResourceSchedule},
+		{"sched", ResourceSchedule},
 	}
 	for _, tt := range tests {
 		result, err := ParseResourceFilter(tt.input)
@@ -84,6 +88,35 @@ func TestParseResourceFilterDedup(t *testing.T) {
 	}
 	if len(result) != 1 {
 		t.Errorf("expected 1 type after dedup, got %d", len(result))
+	}
+}
+
+func TestConvertSchedules(t *testing.T) {
+	schedules := []*models.Schedule{
+		{ID: 1, Name: "Nightly", CronFormat: "0 2 * * *", TemplateID: 40, TplName: "Deploy", Active: true},
+		{ID: 2, Name: "Paused", CronFormat: "0 3 * * *", TemplateID: 41, Active: false},
+	}
+
+	entries := convertSchedules(schedules)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	if entries[0].Template != "Deploy" {
+		t.Errorf("template name ref: got %q, want Deploy", entries[0].Template)
+	}
+	if entries[0].TemplateID != 0 {
+		t.Errorf("template_id should be omitted when name is known, got %d", entries[0].TemplateID)
+	}
+	if entries[0].Active != nil {
+		t.Errorf("active should be omitted when true, got %v", *entries[0].Active)
+	}
+
+	if entries[1].Template != "" || entries[1].TemplateID != 41 {
+		t.Errorf("expected template_id fallback when tpl_name is empty, got template=%q id=%d", entries[1].Template, entries[1].TemplateID)
+	}
+	if entries[1].Active == nil || *entries[1].Active {
+		t.Error("active should be explicit false for inactive schedules")
 	}
 }
 
