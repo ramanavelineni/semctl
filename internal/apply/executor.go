@@ -546,14 +546,17 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			req.InventoryID = mergeID(invID, existing.InventoryID)
 			req.BuildTemplateID = mergeID(buildTplID, existing.BuildTemplateID)
 			req.ViewID = mergeID(entry.ViewID, existing.ViewID)
-			// Survey vars and vaults are not managed by apply configs yet —
-			// preserve whatever is configured server-side instead of wiping it.
+			// Survey vars, vaults, multi-variable-group assignments, and task
+			// params are not managed by apply configs yet — preserve whatever
+			// is configured server-side instead of wiping it.
 			if existing.SurveyVars != nil {
 				req.SurveyVars = existing.SurveyVars
 			}
 			if existing.Vaults != nil {
 				req.Vaults = existing.Vaults
 			}
+			req.EnvironmentIds = existing.EnvironmentIds
+			req.TaskParams = existing.TaskParams
 		}
 
 		params := template.NewPutProjectProjectIDTemplatesTemplateIDParams()
