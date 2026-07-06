@@ -280,7 +280,10 @@ contexts:
 `)
 	_ = Load(path)
 
-	got := GetServerURL()
+	got, err := GetServerURL()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	want := "https://10.0.0.1:8080/api"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -297,10 +300,126 @@ contexts:
 `)
 	_ = Load(path)
 
-	got := GetServerURL()
+	got, err := GetServerURL()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	want := "http://10.0.0.1:3000/api"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestParseHostPort(t *testing.T) {
+	cases := []struct {
+		in      string
+		host    string
+		port    int
+		wantErr bool
+	}{
+		{"10.0.0.1:3000", "10.0.0.1", 3000, false},
+		{"myserver", "myserver", DefaultPort, false},
+		{"example.com:8080", "example.com", 8080, false},
+		{"  10.0.0.1:3000  ", "10.0.0.1", 3000, false},
+		{"[::1]:3000", "::1", 3000, false},
+		{"::1", "::1", DefaultPort, false},
+		{"", "", 0, true},
+		{"   ", "", 0, true},
+		{"example.com:abc", "", 0, true},
+		{"example.com:0", "", 0, true},
+		{"example.com:70000", "", 0, true},
+	}
+	for _, c := range cases {
+		host, port, err := ParseHostPort(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("ParseHostPort(%q): expected error, got host=%q port=%d", c.in, host, port)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ParseHostPort(%q): unexpected error: %v", c.in, err)
+			continue
+		}
+		if host != c.host || port != c.port {
+			t.Errorf("ParseHostPort(%q): got (%q, %d), want (%q, %d)", c.in, host, port, c.host, c.port)
+		}
+	}
+}
+
+func TestEnvVarOverrides(t *testing.T) {
+	path := writeTestConfig(t, `
+current_context: default
+contexts:
+  default:
+    server:
+      host: 10.0.0.1
+      port: 3000
+    auth:
+      username: cfguser
+      password: cfgpass
+      api_token: cfgtoken
+`)
+	_ = Load(path)
+
+	t.Setenv("SEMCTL_AUTH_USERNAME", "envuser")
+	t.Setenv("SEMCTL_AUTH_PASSWORD", "envpass")
+	t.Setenv("SEMCTL_API_TOKEN", "envtoken")
+	t.Setenv("SEMCTL_SERVER", "envhost:9999")
+	t.Setenv("SEMCTL_SCHEME", "https")
+
+	if got := GetUsername(); got != "envuser" {
+		t.Errorf("GetUsername: got %q, want envuser", got)
+	}
+	if got := GetPassword(); got != "envpass" {
+		t.Errorf("GetPassword: got %q, want envpass", got)
+	}
+	if got := GetAPIToken(); got != "envtoken" {
+		t.Errorf("GetAPIToken: got %q, want envtoken", got)
+	}
+
+	host, port, scheme, err := ResolveServer()
+	if err != nil {
+		t.Fatalf("ResolveServer: unexpected error: %v", err)
+	}
+	if host != "envhost" || port != 9999 || scheme != "https" {
+		t.Errorf("ResolveServer: got (%q, %d, %q), want (envhost, 9999, https)", host, port, scheme)
+	}
+}
+
+func TestResolveServer_FlagBeatsEnv(t *testing.T) {
+	path := writeTestConfig(t, `
+current_context: default
+contexts:
+  default:
+    server:
+      host: 10.0.0.1
+`)
+	_ = Load(path)
+
+	t.Setenv("SEMCTL_SERVER", "envhost:9999")
+	SetServerOverride("flaghost:8888")
+	defer SetServerOverride("")
+
+	host, port, _, err := ResolveServer()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if host != "flaghost" || port != 8888 {
+		t.Errorf("got (%q, %d), want (flaghost, 8888)", host, port)
+	}
+}
+
+func TestResolveServer_NoServer(t *testing.T) {
+	path := writeTestConfig(t, `
+current_context: default
+`)
+	_ = Load(path)
+	SetServerOverride("")
+
+	_, _, _, err := ResolveServer()
+	if err == nil {
+		t.Fatal("expected error when no server is configured")
 	}
 }
 
