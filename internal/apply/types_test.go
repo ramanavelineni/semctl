@@ -360,8 +360,8 @@ func TestCollectFilesWithFiles(t *testing.T) {
 	dir := t.TempDir()
 	p1 := filepath.Join(dir, "a.yaml")
 	p2 := filepath.Join(dir, "b.json")
-	os.WriteFile(p1, []byte("project: A"), 0644)
-	os.WriteFile(p2, []byte(`{"project":"B"}`), 0644)
+	mustWriteFile(t, p1, []byte("project: A"))
+	mustWriteFile(t, p2, []byte(`{"project":"B"}`))
 
 	files, err := CollectFiles([]string{p1, p2})
 	if err != nil {
@@ -374,10 +374,10 @@ func TestCollectFilesWithFiles(t *testing.T) {
 
 func TestCollectFilesWithDirectory(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("project: A"), 0644)
-	os.WriteFile(filepath.Join(dir, "b.yml"), []byte("project: B"), 0644)
-	os.WriteFile(filepath.Join(dir, "c.json"), []byte(`{"project":"C"}`), 0644)
-	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("ignore me"), 0644)
+	mustWriteFile(t, filepath.Join(dir, "a.yaml"), []byte("project: A"))
+	mustWriteFile(t, filepath.Join(dir, "b.yml"), []byte("project: B"))
+	mustWriteFile(t, filepath.Join(dir, "c.json"), []byte(`{"project":"C"}`))
+	mustWriteFile(t, filepath.Join(dir, "readme.txt"), []byte("ignore me"))
 
 	files, err := CollectFiles([]string{dir})
 	if err != nil {
@@ -390,7 +390,7 @@ func TestCollectFilesWithDirectory(t *testing.T) {
 
 func TestCollectFilesEmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("no configs"), 0644)
+	mustWriteFile(t, filepath.Join(dir, "readme.txt"), []byte("no configs"))
 
 	_, err := CollectFiles([]string{dir})
 	if err == nil {
@@ -415,11 +415,13 @@ func TestCollectFilesEmpty(t *testing.T) {
 func TestCollectFilesMixedFileAndDir(t *testing.T) {
 	dir := t.TempDir()
 	subdir := filepath.Join(dir, "configs")
-	os.MkdirAll(subdir, 0755)
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	single := filepath.Join(dir, "main.yaml")
-	os.WriteFile(single, []byte("project: Main"), 0644)
-	os.WriteFile(filepath.Join(subdir, "extra.yaml"), []byte("project: Extra"), 0644)
+	mustWriteFile(t, single, []byte("project: Main"))
+	mustWriteFile(t, filepath.Join(subdir, "extra.yaml"), []byte("project: Extra"))
 
 	files, err := CollectFiles([]string{single, subdir})
 	if err != nil {
@@ -427,5 +429,13 @@ func TestCollectFilesMixedFileAndDir(t *testing.T) {
 	}
 	if len(files) != 2 {
 		t.Fatalf("expected 2 files, got %d", len(files))
+	}
+}
+
+// mustWriteFile writes a test fixture file or fails the test.
+func mustWriteFile(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
 	}
 }
