@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
@@ -28,6 +30,54 @@ var keyCreateCmd = &cobra.Command{
 		privateKey, _ := cmd.Flags().GetString("private-key")
 		passphrase, _ := cmd.Flags().GetString("passphrase")
 		password, _ := cmd.Flags().GetString("password")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "" || keyType == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Key name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewSelect[string]().Title("Type").
+						Options(
+							huh.NewOption("none", "none"),
+							huh.NewOption("ssh", "ssh"),
+							huh.NewOption("login_password", "login_password"),
+						).
+						Value(&keyType),
+				).Title("New access key"),
+			).Run(); err != nil {
+				return err
+			}
+
+			// Type-specific fields in a second form, once the type is known
+			switch keyType {
+			case "ssh":
+				if err := newForm(
+					huh.NewGroup(
+						huh.NewInput().Title("Login (optional)").Value(&login),
+						huh.NewText().Title("Private key").Value(&privateKey).
+							Validate(requireValue("private key")),
+						huh.NewInput().Title("Passphrase (optional)").EchoMode(huh.EchoModePassword).Value(&passphrase),
+					).Title("SSH key"),
+				).Run(); err != nil {
+					return err
+				}
+			case "login_password":
+				if err := newForm(
+					huh.NewGroup(
+						huh.NewInput().Title("Login").Value(&login).
+							Validate(requireValue("login")),
+						huh.NewInput().Title("Password").EchoMode(huh.EchoModePassword).Value(&password).
+							Validate(requireValue("password")),
+					).Title("Login/password credentials"),
+				).Run(); err != nil {
+					return err
+				}
+			}
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")

@@ -1,168 +1,218 @@
 # semctl Roadmap
 
-Pending features and implementation details for future development.
-
-## 1. Interactive Forms for Create/Update Commands
-
-Add `huh` form-based interactive mode to all create and update commands, using the existing `shouldAutoInteractive()` + `newForm()` helpers in `cmd/form.go`.
-
-### Pattern
-
-```go
-// In each create command, after reading flags:
-inputsMissing := name == "" || otherRequired == ""
-interactive, err := shouldAutoInteractive(cmd, inputsMissing)
-if err != nil { return err }
-if interactive {
-    form := newForm(huh.NewGroup(
-        huh.NewInput().Title("Name").Value(&name),
-        // ... other fields
-    ).Title("Create <Resource>"))
-    if err := form.Run(); err != nil { return err }
-}
-```
-
-### Commands to add interactive mode
-
-| Command | Required fields | Optional fields |
-|---------|----------------|-----------------|
-| `project create` | name | type, alert, alert_chat, max_parallel_tasks |
-| `template create` | name, repository_id | type, app, playbook, git_branch, description, environment_id, inventory_id, build_template_id, view_id, autorun |
-| `task run` | template_id | message, git_branch, arguments, environment, limit, playbook, debug, dry_run, diff |
-| `key create` | name, type | login, password, private_key, passphrase (conditional on type) |
-| `inventory create` | name, type | inventory, ssh_key_id, become_key_id, repository_id |
-| `repo create` | name, git_url | git_branch, ssh_key_id |
-| `env create` | name | json_vars, env, password |
-
-### Notes
-- Key create needs conditional fields: show login/password for `login_password` type, show login/private_key/passphrase for `ssh` type
-- Template create could offer a select dropdown for type (e.g., "", "deploy", "build") and app (e.g., "ansible", "terraform", "bash")
-- Update commands could optionally launch an interactive form pre-filled with current values when no `field=value` args are provided
+Pending features, fixes, and hardening work. Updated 2026-07-12 after a full code review
+(security / UX / CI-CD / architecture). Completed items (interactive create forms, user
+commands, apply, export) have been removed.
 
 ---
 
-## 2. Schedule Commands
+## 1. Confirmed Bugs (fix first — all reproduced)
 
-Cron-based task scheduling. Project-scoped resource.
+| # | Bug | Where | Notes |
+|---|-----|-------|-------|
+| 1.1 | `semctl login -s <host>` fails with `unknown shorthand flag: 's'` | `cmd/login.go:190` | Local `--server` flag shadows the root persistent `-s, --server` and pflag drops the shorthand. Same shadowing (divergent help text) for `--context` on login/logout. Remove the local flags and read the persistent ones. |
+| 1.2 | `--no-color` is a no-op | `cmd/root.go:27` → `internal/output/output.go:41-43` | `output.DisableColor()` has an empty body; the real `style.DisableColor()` (`style.go:63`) is never called. Also wire emoji off (`SetEmojiEnabled` is dead code) — CI logs currently always get ✅/❌. |
+| 1.3 | Subcommand typos exit 0 | all parent commands (`cmd/project.go`, `task.go`, …) | `semctl project lst` prints help and exits 0 — silent success for scripts. Add unknown-subcommand errors on parent commands. |
+| 1.4 | Empty list = exit 1 in table mode, exit 0 + `null` in `--json` | every `*_list.go` (e.g. `cmd/repo_list.go:56-58`), `internal/output/json.go` | Empty is a normal state: print info to stderr, exit 0, and emit `[]` (not `null`) for nil slices in JSON/YAML. |
+| 1.5 | `key update` silently wipes stored secrets | `cmd/key_update.go:101-115` | Sub-structs rebuilt only from passed fields with `OverrideSecret: true` always set — `key update 2 login=x` erases the private key. Refuse partial secret updates or require explicit confirmation. |
+| 1.6 | Auto-interactive checks stdout TTY only | `cmd/form.go:78`, `internal/style/style.go:68` | `semctl project create < /dev/null` on a terminal launches a form that dies on EOF with a raw bubbletea error. Gate on `IsTTY() && IsStdinTTY()`. |
+| 1.7 | Form abort surfaces huh's raw `user aborted` | form call sites | Map `huh.ErrUserAborted` → `errCancelled` so form abort and confirm decline speak the same language. |
+
+---
+
+## 2. Security Hardening
+
+Ordered by severity; items 2.1–2.3 are design-level.
+
+- **2.1 Bind cached tokens to server identity (HIGH).** Token cache
+  (`~/.cache/semctl/tokens/<context>.json`, `internal/client/client.go:340`) stores only the
+  token, keyed by context name. A CWD `semctl.yaml`/`.semctl.yaml` (auto-loaded,
+  `internal/config/config.go:74-81`) can redefine a context to point at an attacker's host —
+  the cached bearer token is sent there, and with `SEMCTL_AUTH_USERNAME/PASSWORD` set,
+  `reauthTransport` sends the password after the 401. Fix: store the server host in the cache
+  file and refuse mismatches; consider opt-in trust for CWD configs (direnv-style). Also
+  covers the `--server`-override variant (skip cached-token/password fallback when the
+  override differs from the context's server).
+- **2.2 Expand `${VAR}` after parsing, not before (MEDIUM).** `internal/apply/types.go:196`
+  expands over raw file text, so an env value containing newlines injects YAML structure
+  (e.g. a branch name containing `"\nproject_state: absent` + `apply --yes` = project
+  deletion). Walk parsed string scalars instead, or YAML-escape substituted values.
+- **2.3 Disable go-openapi's `DEBUG` wire dumping (MEDIUM).** `go-openapi/runtime` enables
+  full request/response dumps — including `Authorization` headers and secret bodies — when
+  the generic `DEBUG`/`SWAGGER_DEBUG` env var is non-empty (verified in v0.32.4
+  `logger/logger.go:13-22`). Set `transport.Debug = false` in `newClientWithToken`, or gate
+  behind `SEMCTL_DEBUG` with header redaction.
+- **2.4 Validate context names (MEDIUM).** Names flow unsanitized into cache paths
+  (`client.go:341`) — `../../foo` escapes the tokens dir (arbitrary 0600 file write on save,
+  arbitrary `.json` delete on logout/context delete). Enforce `^[A-Za-z0-9._-]+$` at all
+  entry points (`--context`, config `current_context`, `login --context`). Also closes Viper
+  key injection via dots in names (`config.go:149,270,282,294`).
+- **2.5 `export -o` writes 0644** (`cmd/export.go:85`) — exports contain plaintext variables
+  even with secrets masked. Write 0600 like config/tokens.
+- **2.6 `env show --json` prints the password the table masks** (`cmd/env_show.go:46-54`).
+  Pick one policy; redact in all formats.
+- **2.7 Non-argv secret input for key/env commands.** `key create --private-key/--passphrase`
+  and `env create --password` only accept secrets via argv (ps/shell-history leak); the
+  key create Example even teaches `--private-key "$(cat ~/.ssh/id_rsa)"`. Add
+  `--private-key-file` and `--password-stdin` variants.
+- **2.8 Warn when TLS verification is disabled via config.** `server.insecure_skip_verify`
+  from a config file (including a CWD config) silently disables verification
+  (`client.go:62-67`); only the `--insecure` flag is an explicit choice. Emit a warning once
+  per invocation whatever the source.
+- **2.9 Token-cache lifecycle gaps.** `context rename` orphans a still-valid cached token;
+  `context delete` removes the cache without server-side revocation (contrast `logout`,
+  which revokes). Rename should move the cache file; delete should attempt revocation.
+- **2.10 Tighten existing config file perms on write.** `os.WriteFile(path, out, 0600)`
+  leaves a pre-existing 0644 file at 0644 (`config.go:478`) — `login --save-password` into it
+  stores the password world-readable. `os.Chmod(path, 0600)` after write.
+- **2.11 `getCacheDir` ignores `os.UserHomeDir` error** (`client.go:330`) — on failure the
+  token lands in a relative `.cache/` under the CWD. Return an error instead.
+
+---
+
+## 3. CI/CD Friendliness
+
+- **3.1 Distinct exit codes.** Everything exits 1 (`cmd/root.go:85-89`) — auth failure,
+  not-found, cancelled, task-failed, and wait-timeout are indistinguishable. Map sentinel
+  errors (`errCancelled` exists already) to documented codes in `Execute()`.
+- **3.2 Machine-readable mutations.** `task run` prints the new task ID only in a styled
+  stderr message (`cmd/task_run.go:86`); same for every create command. Honor `--json` by
+  printing the created resource/task to stdout so pipelines can capture IDs.
+- **3.3 `apply --dry-run` drift gate.** Exits 0 whether the plan is empty or full
+  (`cmd/apply.go:87-95`), plan is human text on stderr. Add `--detailed-exitcode`
+  (0 in-sync / 2 changes / 1 error) and a `--json` plan output for GitOps loops.
+- **3.4 `--quiet` flag** suppressing `style.Success/Info` (keep Error/Warning) — today the
+  only silencer is `2>/dev/null`, which also hides real errors.
+- **3.5 `--wait-timeout` defaults to 0 = wait forever** (`cmd/task_run.go:187`) — pick a
+  sane default or warn when waiting unbounded in non-TTY mode. Consider opt-in
+  retry/backoff for transient 5xx (only 401 is retried today).
+- **3.6 Ephemeral-token leak on username/password auth.** Each cookie login mints a
+  server-side API token that is never revoked; on a read-only filesystem the ignored cache
+  write (`client.go:146-150`) means every command mints another. Document
+  `SEMCTL_API_TOKEN` as the CI path; consider revoking ephemeral tokens at exit.
+- **3.7 Own CI hardening** (`.github/workflows/`): `go test -race -cover`, govulncheck,
+  dependabot, pin golangci-lint version (currently `latest`), cross-compile darwin/windows
+  in CI (`goreleaser build --snapshot`), gate release.yml on lint too. goreleaser: consider
+  homebrew tap / docker image / SBOM+signing if distributing publicly.
+
+---
+
+## 4. UX Polish
+
+- **4.1 Dynamic shell completion.** Zero `ValidArgsFunction` in the repo. Highest value:
+  context names for `context use` (purely local), project names for `-p`, field names for
+  update commands, template/task IDs.
+- **4.2 API error translation.** Raw go-swagger errors reach users
+  (`[GET /project/{project_id}/…] …NotFound (status 404): {…}`). One `errors.As` helper
+  mapping 404 → "repository 5 not found in project 3", 401 → auth hint, 400 → server
+  message. Include the server/context identity in API errors for multi-context users.
+- **4.3 Consistency fixes:**
+  - `project update` takes no positional ID while every other update does — accept one.
+  - Name resolution works for `-p` but nowhere else (`project show myproj` fails) — accept
+    names in positional resource args.
+  - Unified `--output table|json|yaml` (keep `--json`/`--yaml` as aliases; error on
+    conflict — today `--json --yaml` silently picks JSON). Note `export -o` means *file*.
+  - Accept kebab-case in `field=value` args (create flags are kebab, update fields snake).
+  - Standardize update-arg validation on the friendly `no fields to update` message
+    (user/runner use bare cobra `requires at least 2 arg(s)`).
+  - Usage brackets: `context use [name]` → `<name>` (args are required).
+- **4.4 Missing confirmations:** `task stop` (kills a running deployment), `runner
+  deactivate`, `runner clear-cache`, and the secret-overwriting `key update` path.
+- **4.5 Help text:** `template update` Long omits the `arguments` field and its
+  unknown-field error doesn't list valid fields (every sibling does); document
+  `user show me`; add a root-level Example showing the login → project list → task run flow.
+- **4.6 Form improvements:** populate repository/inventory/environment selects from the API
+  in `template create` (the two-stage `key create` form is the pattern to copy); note in
+  forms that more options exist as flags; add a form to `task run`; optional pre-filled
+  forms for update commands when no `field=value` args are given.
+- **4.7 Table rendering:** wrap/truncate long cells (`WrapNone` today produces enormous
+  lines for env JSON); render nil ints as `-`/empty, not `0` (nil `MaxParallelTasks`
+  currently indistinguishable from explicit 0).
+
+---
+
+## 5. Architecture / Tech Debt
+
+- **5.1 Generic command helpers before Phase 12.** All business logic lives in 74 `RunE`
+  closures; list/show/delete are byte-for-byte the same shape (cmd coverage: 12.4%).
+  Two or three generics helpers (`runList`, `runDelete`) would remove ~half of `cmd/` and
+  stop the copy-paste drift that produced bug 1.4. Do this before adding token/event
+  commands.
+- **5.2 Shared `TemplateRequest` builder.** Request building is triplicated
+  (`cmd/template_create.go`, `cmd/template_update.go`, twice in
+  `internal/apply/executor.go`) with two different SurveyVars/Vaults/EnvironmentIds/
+  TaskParams preservation mechanisms — the invariant that already bit once. One shared
+  builder used by both cmd and executor.
+- **5.3 Apply sharp edges:**
+  - Unresolvable name refs return `0` silently (`reconcile.go:842`) — a typo'd
+    `ssh_key: my-kye` creates a repo with `SSHKeyID: 0`. Return errors naming the reference.
+  - On partial failure the executor attempts dependents of failed creates. Track failed
+    labels and skip dependents; add `--fail-fast`.
+  - Surface field-level diffs in the plan — `needsUpdate` already computes them but returns
+    bool; return changed field names into `Plan.Description`.
+  - `yaml.KnownFields(true)` for apply files — a typo'd `enviroment_variables:` is silently
+    dropped today, meaning secrets silently don't get applied.
+  - Compare variable-group JSON semantically (unmarshal both sides) — string comparison
+    causes false-positive updates on key order/whitespace (`reconcile.go:709-722`).
+  - Document that merge semantics can't unset a field (empty = keep); consider a
+    `field: null` convention if apply should be a full source of truth.
+- **5.4 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
+  yaml.v3 writes verbatim — a context named `Prod` lists as `prod` and a save can create a
+  duplicate `prod:` key Viper then merges unpredictably. Writes destroy comments and aren't
+  atomic (no temp+rename, no lock) — concurrent `login`s can corrupt the file. Env overrides
+  are already manual `os.Getenv`, so Viper earns little here. Normalize context names
+  (lowercase at the boundary, as apply does) and write atomically.
+- **5.5 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
+  anywhere; Ctrl-C kills mid-apply with no resumability note and can't cancel in-flight
+  HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
+- **5.6 Server version awareness.** Client targets 2.18.20; no version detection exists.
+  Runner/user-options commands 404 raw on older servers, and a schedules-list 404 aborts an
+  entire apply plan even for configs without schedules. Fetch `GET /api/info` once per
+  session (see §9), warn on mismatch, degrade gracefully.
+- **5.7 httptest coverage for executor/reconciler.** `internal/apply/executor.go` has zero
+  test coverage and reconcile's API paths are untested — the riskiest code rides on manual
+  container smoke tests. Point the go-swagger transport at an `httptest.Server` with canned
+  Semaphore JSON; exercises real request bodies (would have caught the SurveyVars-wipe bug
+  class). Cheaper than introducing client interfaces.
+- **5.8 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
+  and let `RunE` propagate.
+
+---
+
+## 6. Schedule Commands
+
+Cron-based task scheduling. Project-scoped. Apply/export already reconcile schedules
+declaratively; these are the imperative commands.
 
 ### API Endpoints (via `apiClient.Schedule`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GetProjectProjectIDSchedules` | `GET /project/{project_id}/schedules` | List schedules (spec-patched via `scripts/patch-spec.py`; returns `ScheduleWithTpl` incl. `tpl_name`) |
 | `PostProjectProjectIDSchedules` | `POST /project/{project_id}/schedules` | Create schedule |
 | `GetProjectProjectIDSchedulesScheduleID` | `GET /project/{project_id}/schedules/{schedule_id}` | Get schedule |
 | `PutProjectProjectIDSchedulesScheduleID` | `PUT /project/{project_id}/schedules/{schedule_id}` | Update schedule |
 | `DeleteProjectProjectIDSchedulesScheduleID` | `DELETE /project/{project_id}/schedules/{schedule_id}` | Delete schedule |
 
-**Note:** No list endpoint in the generated client. Schedules may need to be fetched via project events or a different mechanism. Verify against Semaphore docs.
-
 ### Models
 
-**`models.Schedule`** fields: `ID`, `Name`, `ProjectID`, `TemplateID`, `CronFormat`, `Active` (bool), `Type` (enum: `""`, `"run_at"`), `RunAt` (datetime), `TaskParams` (*TaskPrams)
-
-**`models.ScheduleRequest`** fields: same as Schedule
-
-**`models.TaskPrams`** fields: `Arguments`, `Environment`, `GitBranch`, `Message`, `Params` (embedded AnsibleTaskParams + TerraformTaskParams)
+**`models.Schedule`** fields: `ID`, `Name`, `ProjectID`, `TemplateID`, `CronFormat`,
+`Active` (bool), `Type` (enum: `""`, `"run_at"`), `RunAt` (datetime), `TaskParams` (*TaskPrams)
 
 ### Files to create
 
-**`cmd/schedule.go`** — Parent command
-```go
-var scheduleCmd = &cobra.Command{
-    Use:     "schedule",
-    Short:   "Manage schedules",
-    Aliases: []string{"sched"},
-}
-func init() { rootCmd.AddCommand(scheduleCmd) }
-```
-
-**`cmd/schedule_show.go`** — `semctl schedule show <id>`
-- Calls `GetProjectProjectIDSchedulesScheduleID`
-- Field/Value table: ID, Name, TemplateID, CronFormat, Active, Type, RunAt
-
-**`cmd/schedule_create.go`** — `semctl schedule create`
-- Flags: `--name` (required), `--template-id` (required), `--cron-format`, `--active` (default true), `--type` (default ""), `--run-at`
-- Body: `&models.ScheduleRequest{Name, TemplateID, CronFormat, Active, Type, RunAt, ProjectID}`
-
-**`cmd/schedule_update.go`** — `semctl schedule update <id> [field=value...]`
-- Fetch current via GET, apply field=value overrides
-- Fields: name, template_id, cron_format, active, type, run_at
-
-**`cmd/schedule_delete.go`** — `semctl schedule delete <id>`
-- Standard confirmation + delete pattern
-
-### Verification
-```bash
-go build ./... && go vet ./...
-```
+- `cmd/schedule.go` — parent command (alias `sched`)
+- `cmd/schedule_list.go` — table: ID, Name, Template (tpl_name), Cron, Active
+- `cmd/schedule_show.go` — Field/Value table
+- `cmd/schedule_create.go` — flags: `--name`, `--template-id` (required), `--cron-format`, `--active`, `--type`, `--run-at`
+- `cmd/schedule_update.go` — `<id> [field=value...]`: name, template_id, cron_format, active, type, run_at
+- `cmd/schedule_delete.go` — standard confirmation + delete
 
 ---
 
-## 3. User Commands (Admin)
-
-User management. Global scope (not project-scoped). Requires admin privileges.
-
-### API Endpoints (via `apiClient.User`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GetUsers` | `GET /users` | List all users |
-| `GetUsersUserID` | `GET /users/{user_id}/` | Get user by ID |
-| `GetUser` | `GET /user/` | Get logged-in user (self) |
-| `PostUsers` | `POST /users` | Create user |
-| `PutUsersUserID` | `PUT /users/{user_id}/` | Update user |
-| `PostUsersUserIDPassword` | `POST /users/{user_id}/password` | Change password |
-| `DeleteUsersUserID` | `DELETE /users/{user_id}/` | Delete user |
-
-### Models
-
-**`models.User`** fields: `ID`, `Name`, `Username`, `Email`, `Admin` (bool), `Alert` (bool), `External` (bool), `Created`
-
-**`models.UserRequest`** fields: `Name`, `Username`, `Email`, `Password` (strfmt.Password), `Admin` (bool), `Alert` (bool), `External` (bool)
-
-### Files to create
-
-**`cmd/user.go`** — Parent command
-
-**`cmd/user_list.go`** — `semctl user list`
-- Calls `GetUsers`
-- Table: ID, Name, Username, Email, Admin, Created
-
-**`cmd/user_show.go`** — `semctl user show <id>`
-- Calls `GetUsersUserID`
-- Field/Value table: ID, Name, Username, Email, Admin, Alert, External, Created
-
-**`cmd/user_whoami.go`** — `semctl user whoami`
-- Calls `GetUser` (logged-in user)
-- Field/Value table: same as show
-
-**`cmd/user_create.go`** — `semctl user create`
-- Flags: `--name` (required), `--username` (required), `--email` (required), `--password` (required), `--admin` (bool), `--alert` (bool)
-- Body: `&models.UserRequest{...}`
-
-**`cmd/user_update.go`** — `semctl user update <id> [field=value...]`
-- Fetch current via `GetUsersUserID`, apply overrides
-- Fields: name, username, email, admin, alert, external
-
-**`cmd/user_password.go`** — `semctl user password <id>`
-- Flags: `--password` (required, or prompt from stdin)
-- Calls `PostUsersUserIDPassword`
-
-**`cmd/user_delete.go`** — `semctl user delete <id>`
-- Standard confirmation + delete pattern
-
-### Verification
-```bash
-go build ./... && go vet ./...
-```
-
----
-
-## 4. Token Commands
+## 7. Token Commands
 
 API token management for the logged-in user. Uses `apiClient.Authentication`.
-
-### API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -170,305 +220,65 @@ API token management for the logged-in user. Uses `apiClient.Authentication`.
 | `PostUserTokens` | `POST /user/tokens` | Create token |
 | `DeleteUserTokensAPITokenID` | `DELETE /user/tokens/{api_token_id}` | Expire/delete token |
 
-### Models
-
-**`models.APIToken`** fields: `ID` (string), `UserID`, `Created`, `Expired` (bool)
+**`models.APIToken`** fields: `ID` (string — not int64 like other resources), `UserID`,
+`Created`, `Expired` (bool)
 
 ### Files to create
 
-**`cmd/token.go`** — Parent command
-
-**`cmd/token_list.go`** — `semctl token list`
-- Calls `GetUserTokens`
-- Table: ID, User ID, Created, Expired
-
-**`cmd/token_create.go`** — `semctl token create`
-- Calls `PostUserTokens`
-- Prints the new token ID on success
-- No flags needed (API creates with defaults)
-
-**`cmd/token_delete.go`** — `semctl token delete <token_id>`
-- `token_id` is a string (not int64)
-- Calls `DeleteUserTokensAPITokenID`
-- Standard confirmation pattern
+- `cmd/token.go` — parent command
+- `cmd/token_list.go` — table: ID, User ID, Created, Expired
+- `cmd/token_create.go` — prints the new token to stdout (pipeable, like `runner token`)
+- `cmd/token_delete.go` — string ID; standard confirmation
 
 ### Notes
-- Token ID is a string, not int64 (unlike other resources)
-- No update endpoint exists
-- `token_list` and `token_create` are not project-scoped (user-level)
-
-### Verification
-```bash
-go build ./... && go vet ./...
-```
+- The token ID *is* the token — treat list/create output accordingly (stdout, maskable).
+- Not project-scoped (user-level). No update endpoint.
+- Nice pairing with 2.9/3.6: a `token prune` or revoke-on-exit story for CI-minted tokens.
 
 ---
 
-## 5. Event Commands
+## 8. Event Commands
 
-Read-only event listing. Global scope.
-
-### API Endpoints (via `apiClient.Operations`)
+Read-only event listing. Global scope. Uses `apiClient.Operations`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GetEvents` | `GET /events` | Get events for user's projects |
 | `GetEventsLast` | `GET /events/last` | Get last 200 events |
 
-### Models
-
 **`models.Event`** fields: `Description`, `ObjectID`, `ObjectType`, `ProjectID`, `UserID`
 
 ### Files to create
 
-**`cmd/event.go`** — Parent command
-
-**`cmd/event_list.go`** — `semctl event list`
-- Calls `GetEventsLast` by default
-- Flag: `--all` to use `GetEvents` instead
-- Table: Project ID, User ID, Object Type, Object ID, Description
-
-### Notes
-- Read-only resource (no create/update/delete)
-- Event model is simple (no timestamps in model, might be in response headers)
-- Uses `apiClient.Operations` (not a dedicated Event client)
-
-### Verification
-```bash
-go build ./... && go vet ./...
-```
+- `cmd/event.go` — parent command
+- `cmd/event_list.go` — `GetEventsLast` by default, `--all` for `GetEvents`; table:
+  Project ID, User ID, Object Type, Object ID, Description
 
 ---
 
-## 6. Server Info Command
+## 9. Server Info Command
 
-Utility command using the operations client.
-
-### Files to create
-
-**`cmd/info.go`** — `semctl info`
-- Calls `apiClient.Operations.GetInfo`
-- Displays Semaphore server version and configuration
+`cmd/info.go` — `semctl info`, calls `apiClient.Operations.GetInfo`, displays Semaphore
+server version and configuration. Doubles as the fetch point for version awareness (5.6).
 
 ---
 
-## 7. Apply Command — Declarative Resource Management
+## 10. Remaining Interactive-Form Work
 
-Apply a YAML manifest to create, update, or delete resources in Semaphore UI. Inspired by `kubectl apply`.
+Create-command forms shipped (all 7 creates + `user create` + login/logout/user password).
+Still pending:
 
-### Usage
-
-```bash
-semctl apply -f resources.yaml              # apply from file
-semctl apply -f resources.yaml --dry-run    # preview changes without applying
-semctl apply -f resources.yaml --delete     # delete resources defined in the file
-```
-
-### Manifest Format
-
-```yaml
-project_id: 1
-
-keys:
-  - name: "Deploy Key"
-    type: ssh
-    login: deploy
-    private_key: |
-      -----BEGIN OPENSSH PRIVATE KEY-----
-      ...
-
-repositories:
-  - name: "Main Repo"
-    git_url: "git@github.com:org/app.git"
-    git_branch: main
-    ssh_key: "Deploy Key"    # reference by name
-
-inventories:
-  - name: "Production Hosts"
-    type: static-yaml
-    inventory: |
-      all:
-        hosts:
-          10.0.0.1:
-    ssh_key: "Deploy Key"
-
-environments:
-  - name: "Production"
-    json: '{"db_host": "10.0.0.5"}'
-    password: "vault-pass"
-
-templates:
-  - name: "Deploy App"
-    type: deploy
-    app: ansible
-    playbook: deploy.yml
-    repository: "Main Repo"       # reference by name
-    inventory: "Production Hosts"
-    environment: "Production"
-    autorun: false
-
-schedules:
-  - name: "Nightly Deploy"
-    template: "Deploy App"        # reference by name
-    cron_format: "0 2 * * *"
-    active: true
-```
-
-### Implementation Details
-
-**`cmd/apply.go`** — `semctl apply`
-- Flag: `-f, --file` (required) — path to YAML manifest
-- Flag: `--dry-run` — print planned actions without executing
-- Flag: `--delete` — delete resources defined in the manifest
-
-**Core logic (`internal/apply/apply.go`):**
-1. Parse YAML manifest into typed structs
-2. Resolve `project_id` from manifest or `--project` flag
-3. For each resource type (in dependency order):
-   - Fetch existing resources from API
-   - Match by name (primary identifier for idempotency)
-   - Determine action: create (new), update (changed), skip (unchanged)
-4. Execute actions, printing status per resource:
-   ```
-   key "Deploy Key"              created (id: 5)
-   repo "Main Repo"              unchanged
-   inventory "Production Hosts"  updated (id: 3)
-   template "Deploy App"         created (id: 12)
-   ```
-
-**Resource processing order** (respects dependencies):
-1. Keys (no dependencies)
-2. Repositories (depend on keys via `ssh_key`)
-3. Inventories (depend on keys, optionally repositories)
-4. Environments (no dependencies)
-5. Templates (depend on repositories, inventories, environments)
-6. Schedules (depend on templates)
-
-**Name-based references:**
-- Resources reference each other by `name` instead of ID (e.g., `ssh_key: "Deploy Key"`)
-- Resolver maps names to IDs after fetching/creating upstream resources
-- Error if a referenced name doesn't exist and isn't defined in the manifest
-
-**`--delete` mode:**
-- Process in reverse dependency order (schedules first, keys last)
-- Only deletes resources whose names appear in the manifest
-- Confirmation prompt unless `--yes` is passed
-
-### Files to create
-
-| File | Purpose |
-|------|---------|
-| `cmd/apply.go` | Command definition, flag parsing, orchestration |
-| `internal/apply/apply.go` | Core apply engine: parse, diff, execute |
-| `internal/apply/manifest.go` | Manifest struct definitions and YAML parsing |
-| `internal/apply/resolver.go` | Name-to-ID resolution across resource types |
+- `task run` form (template select from API, message, git_branch, debug/dry_run/diff toggles)
+- Update commands: optionally launch a pre-filled form when no `field=value` args are given
+- See 4.6 for form quality improvements (API-driven selects, coverage notes)
 
 ---
 
-## 8. Export Command — Dump All Resources to File
+## Suggested Order
 
-Export all project resources into a single YAML or JSON file, suitable for backup, version control, or re-import via `semctl apply`.
-
-### Usage
-
-```bash
-semctl export                           # YAML to stdout (default)
-semctl export -o project.yaml           # YAML to file
-semctl export -o project.json --json    # JSON to file
-semctl export --project 1               # specific project
-```
-
-### Output Format
-
-The export produces a manifest compatible with `semctl apply`:
-
-```yaml
-project_id: 1
-
-keys:
-  - name: "Deploy Key"
-    type: ssh
-    login: deploy
-    # private_key omitted (sensitive, not returned by API)
-
-repositories:
-  - name: "Main Repo"
-    git_url: "git@github.com:org/app.git"
-    git_branch: main
-    ssh_key: "Deploy Key"
-
-inventories:
-  - name: "Production Hosts"
-    type: static-yaml
-    inventory: |
-      all:
-        hosts:
-          10.0.0.1:
-    ssh_key: "Deploy Key"
-
-environments:
-  - name: "Production"
-    json: '{"db_host": "10.0.0.5"}'
-    # password omitted (sensitive)
-
-templates:
-  - name: "Deploy App"
-    type: deploy
-    app: ansible
-    playbook: deploy.yml
-    repository: "Main Repo"
-    inventory: "Production Hosts"
-    environment: "Production"
-    autorun: false
-
-schedules:
-  - name: "Nightly Deploy"
-    template: "Deploy App"
-    cron_format: "0 2 * * *"
-    active: true
-```
-
-### Implementation Details
-
-**`cmd/export.go`** — `semctl export`
-- Flag: `-o, --output` — file path (default: stdout)
-- Uses `--json` / `--yaml` global flags for format (default YAML)
-- Uses `getProjectID(cmd)` for project scope
-
-**Core logic:**
-1. Fetch all resources in parallel (keys, repos, inventories, envs, templates, schedules)
-2. Build ID-to-name maps for cross-referencing
-3. Replace foreign key IDs with name references (e.g., `ssh_key_id: 5` → `ssh_key: "Deploy Key"`)
-4. Omit sensitive fields (private keys, passwords) with a comment noting they're excluded
-5. Marshal to YAML or JSON
-6. Write to file or stdout
-
-**Sensitive field handling:**
-- Keys: omit `private_key`, `passphrase`, `password`
-- Environments: omit `password`
-- Add a top-level comment: `# Sensitive fields (private_key, password) are omitted. Fill in before applying.`
-
-### Files to create
-
-| File | Purpose |
-|------|---------|
-| `cmd/export.go` | Command definition, flag parsing, output writing |
-| `internal/apply/export.go` | Fetch all resources, build manifest, resolve names |
-
-### Notes
-- Export and apply share the manifest struct definitions (`internal/apply/manifest.go`)
-- Exported manifests are idempotent — re-applying an unchanged export is a no-op
-- Foreign key resolution is the inverse of apply: IDs → names (export) vs names → IDs (apply)
-
----
-
-## Implementation Order
-
-1. **Export** (2 files) — enables backup/audit of existing Semaphore state
-2. **Apply** (4 files) — declarative management, depends on shared manifest types with export
-3. **Schedule** (5 files) — most useful for automation workflows
-4. **User** (8 files) — admin management
-5. **Token** (4 files) — lightweight, useful for auth management
-6. **Event** (2 files) — read-only, quick to implement
-7. **Info** (1 file) — trivial utility
-8. **Interactive forms** — enhance all existing create/update commands
+1. **§1 Confirmed bugs** — small, independent, all reproduced (1.1/1.2 are one-liners).
+2. **§2.1–2.4 security items** — design-level; 2.3 is a one-liner, 2.1 needs a cache-format change.
+3. **§3.1–3.3 CI/CD** — exit codes, `--json` mutations, apply drift gate (biggest scripting wins).
+4. **§5.1 generic helpers**, then **§6–§9 new commands** on top of them.
+5. **§5.7 httptest coverage** alongside any apply work (§5.3).
+6. The rest of §4/§5 opportunistically.

@@ -7,24 +7,12 @@ import (
 
 	"github.com/ramanavelineni/semctl/internal/config"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
 // executeCommand runs the root command with the given arguments and returns any error.
 func executeCommand(args ...string) error {
 	rootCmd.SetArgs(args)
 	return rootCmd.Execute()
-}
-
-// resetFlags resets all flags on the command (and its parents) so each test starts clean.
-func resetFlags(cmd *cobra.Command) {
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		_ = f.Value.Set(f.DefValue)
-		f.Changed = false
-	})
-	if cmd.HasParent() {
-		resetFlags(cmd.Parent())
-	}
 }
 
 // writeTestConfig writes YAML content to a temp dir and returns the file path.

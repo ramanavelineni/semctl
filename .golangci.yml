@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      exclude-functions:
+        # unchecked Close on response bodies is idiomatic
+        - (io.ReadCloser).Close
+  exclusions:
+    paths:
+      - pkg/semapi # generated OpenAPI client — do not lint
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - pkg/semapi

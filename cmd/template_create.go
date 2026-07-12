@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
+
+	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -33,6 +36,55 @@ var templateCreateCmd = &cobra.Command{
 		autorun, _ := cmd.Flags().GetBool("autorun")
 		buildTplID, _ := cmd.Flags().GetInt64("build-template-id")
 		viewID, _ := cmd.Flags().GetInt64("view-id")
+
+		interactive, err := shouldAutoInteractive(cmd, name == "")
+		if err != nil {
+			return err
+		}
+		if interactive {
+			repoIDStr, invIDStr, envIDStr := "", "", ""
+			if repoID != 0 {
+				repoIDStr = strconv.FormatInt(repoID, 10)
+			}
+			if invID != 0 {
+				invIDStr = strconv.FormatInt(invID, 10)
+			}
+			if envID != 0 {
+				envIDStr = strconv.FormatInt(envID, 10)
+			}
+			if app == "" {
+				app = "ansible"
+			}
+			if err := newForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Template name").Value(&name).
+						Validate(requireValue("name")),
+					huh.NewInput().Title("App").
+						Description("ansible, terraform, tofu, bash, ...").
+						Value(&app),
+					huh.NewInput().Title("Playbook").
+						Description("e.g. playbook.yml").
+						Value(&playbook),
+					huh.NewInput().Title("Repository ID").
+						Description("semctl repo list shows available repositories").
+						Value(&repoIDStr).
+						Validate(optionalInt("repository ID")),
+					huh.NewInput().Title("Inventory ID").
+						Description("semctl inventory list shows available inventories").
+						Value(&invIDStr).
+						Validate(optionalInt("inventory ID")),
+					huh.NewInput().Title("Environment ID").
+						Description("semctl env list shows available variable groups").
+						Value(&envIDStr).
+						Validate(optionalInt("environment ID")),
+				).Title("New template"),
+			).Run(); err != nil {
+				return err
+			}
+			repoID = parseOptionalInt(repoIDStr)
+			invID = parseOptionalInt(invIDStr)
+			envID = parseOptionalInt(envIDStr)
+		}
 
 		if name == "" {
 			return fmt.Errorf("--name is required")

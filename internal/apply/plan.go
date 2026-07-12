@@ -138,7 +138,7 @@ func (p *Plan) FormatPlan() string {
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("\n%s:\n", rt))
+		fmt.Fprintf(&sb, "\n%s:\n", rt)
 		for _, a := range actions {
 			line := fmt.Sprintf("  %s %s", a.Action.Symbol(), a.Label)
 			if a.Description != "" {
@@ -149,8 +149,8 @@ func (p *Plan) FormatPlan() string {
 	}
 
 	creates, updates, deletes, unchanged := p.Summary()
-	sb.WriteString(fmt.Sprintf("\nPlan: %d to create, %d to update, %d to delete, %d unchanged.\n",
-		creates, updates, deletes, unchanged))
+	fmt.Fprintf(&sb, "\nPlan: %d to create, %d to update, %d to delete, %d unchanged.\n",
+		creates, updates, deletes, unchanged)
 
 	return sb.String()
 }
