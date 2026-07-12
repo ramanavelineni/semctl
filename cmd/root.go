@@ -83,9 +83,42 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the root command.
 func Execute() {
+	enforceSubcommands(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// enforceSubcommands gives every parent command without its own Run a RunE
+// that rejects unknown subcommands, so typos like "project lst" fail instead
+// of printing help with exit 0.
+func enforceSubcommands(cmd *cobra.Command) {
+	for _, c := range cmd.Commands() {
+		enforceSubcommands(c)
+	}
+	if cmd.HasSubCommands() && cmd.Run == nil && cmd.RunE == nil {
+		cmd.RunE = requireSubcommand
+	}
+}
+
+func requireSubcommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2 // SuggestionsFor needs this; cobra only defaults it in its own error path
+	}
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		msg += " — did you mean " + strings.Join(suggestions, " or ") + "?"
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+// printEmptyList reports an empty collection on stderr. Empty is data, not
+// an error: list commands exit 0 so scripts can chain on them.
+func printEmptyList(what string) {
+	style.Info(fmt.Sprintf("No %s found.", what))
 }
 
 // getProjectID resolves the project from the --project flag (numeric ID or

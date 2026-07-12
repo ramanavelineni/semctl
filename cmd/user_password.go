@@ -48,12 +48,12 @@ var userPasswordCmd = &cobra.Command{
 			if !interactive {
 				return fmt.Errorf("no terminal available: pass the new password via --password-stdin")
 			}
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("New password").EchoMode(huh.EchoModePassword).Value(&password).
 						Validate(requireValue("password")),
 				),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 		}

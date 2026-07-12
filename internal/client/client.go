@@ -172,6 +172,10 @@ func newClientWithToken(token string, allowReauth bool) (*apiclient.Semapi, erro
 	}
 
 	transport := httptransport.NewWithClient(joinHostPort(host, port), "/api", []string{scheme}, httpClient)
+	// go-openapi dumps full requests — Authorization header and secret
+	// bodies included — whenever the generic DEBUG/SWAGGER_DEBUG env vars
+	// are set. Require our own variable instead.
+	transport.Debug = os.Getenv("SEMCTL_DEBUG") != ""
 	transport.DefaultAuthentication = httptransport.BearerToken(token)
 	return apiclient.New(transport, strfmt.Default), nil
 }

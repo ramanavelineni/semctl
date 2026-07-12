@@ -1,7 +1,10 @@
 package output
 
 import (
+	"reflect"
+
 	"github.com/ramanavelineni/semctl/internal/config"
+	"github.com/ramanavelineni/semctl/internal/style"
 )
 
 // Format represents the output format.
@@ -37,9 +40,10 @@ func FormatFromConfig() Format {
 	}
 }
 
-// DisableColor disables color in table output.
+// DisableColor disables colored and emoji output globally.
 func DisableColor() {
-	// fatih/color handles this globally
+	style.DisableColor()
+	style.SetEmojiEnabled(false)
 }
 
 // Print outputs data in the current format.
@@ -48,10 +52,19 @@ func DisableColor() {
 func Print(data interface{}, headers []string, rows [][]string) {
 	switch currentFormat {
 	case FormatJSON:
-		PrintJSON(data)
+		PrintJSON(normalizeNilSlice(data))
 	case FormatYAML:
-		PrintYAML(data)
+		PrintYAML(normalizeNilSlice(data))
 	default:
 		PrintTable(headers, rows)
 	}
+}
+
+// normalizeNilSlice turns a nil slice into an empty one so empty lists
+// serialize as [] rather than null.
+func normalizeNilSlice(data interface{}) interface{} {
+	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice && v.IsNil() {
+		return reflect.MakeSlice(v.Type(), 0, 0).Interface()
+	}
+	return data
 }

@@ -60,7 +60,7 @@ var userCreateCmd = &cobra.Command{
 					huh.NewConfirm().Title("Admin?").Value(&admin),
 				).Title("New user"),
 			)
-			if err := form.Run(); err != nil {
+			if err := runForm(form); err != nil {
 				return err
 			}
 		}

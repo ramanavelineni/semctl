@@ -59,7 +59,8 @@ var runnerTagsCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no runner tags found")
+			printEmptyList("runner tags")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)

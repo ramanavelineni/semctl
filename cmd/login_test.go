@@ -28,11 +28,21 @@ func TestLoginCmd_Exists(t *testing.T) {
 }
 
 func TestLoginCmd_Flags(t *testing.T) {
-	flags := []string{"server", "scheme", "username", "password", "password-stdin", "save-password", "context"}
+	flags := []string{"scheme", "username", "password", "password-stdin", "save-password"}
 	for _, name := range flags {
 		f := loginCmd.Flags().Lookup(name)
 		if f == nil {
 			t.Errorf("flag %q not registered on login command", name)
+		}
+	}
+}
+
+// Local --server/--context flags would shadow the root persistent ones and
+// break the -s shorthand (pflag drops the shorthand of a shadowed flag).
+func TestLoginCmd_NoShadowedPersistentFlags(t *testing.T) {
+	for _, name := range []string{"server", "context"} {
+		if loginCmd.LocalFlags().Lookup(name) != nil && rootCmd.PersistentFlags().Lookup(name) != nil {
+			t.Errorf("login defines a local %q flag that shadows the root persistent flag", name)
 		}
 	}
 }

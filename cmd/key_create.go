@@ -36,7 +36,7 @@ var keyCreateCmd = &cobra.Command{
 			return err
 		}
 		if interactive {
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Key name").Value(&name).
 						Validate(requireValue("name")),
@@ -48,32 +48,32 @@ var keyCreateCmd = &cobra.Command{
 						).
 						Value(&keyType),
 				).Title("New access key"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 
 			// Type-specific fields in a second form, once the type is known
 			switch keyType {
 			case "ssh":
-				if err := newForm(
+				if err := runForm(newForm(
 					huh.NewGroup(
 						huh.NewInput().Title("Login (optional)").Value(&login),
 						huh.NewText().Title("Private key").Value(&privateKey).
 							Validate(requireValue("private key")),
 						huh.NewInput().Title("Passphrase (optional)").EchoMode(huh.EchoModePassword).Value(&passphrase),
 					).Title("SSH key"),
-				).Run(); err != nil {
+				)); err != nil {
 					return err
 				}
 			case "login_password":
-				if err := newForm(
+				if err := runForm(newForm(
 					huh.NewGroup(
 						huh.NewInput().Title("Login").Value(&login).
 							Validate(requireValue("login")),
 						huh.NewInput().Title("Password").EchoMode(huh.EchoModePassword).Value(&password).
 							Validate(requireValue("password")),
 					).Title("Login/password credentials"),
-				).Run(); err != nil {
+				)); err != nil {
 					return err
 				}
 			}

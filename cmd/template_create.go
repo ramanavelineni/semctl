@@ -55,7 +55,7 @@ var templateCreateCmd = &cobra.Command{
 			if app == "" {
 				app = "ansible"
 			}
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Template name").Value(&name).
 						Validate(requireValue("name")),
@@ -78,7 +78,7 @@ var templateCreateCmd = &cobra.Command{
 						Value(&envIDStr).
 						Validate(optionalInt("environment ID")),
 				).Title("New template"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 			repoID = parseOptionalInt(repoIDStr)

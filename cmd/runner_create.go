@@ -38,13 +38,13 @@ store it safely; it is what the runner process uses to authenticate.`,
 		}
 		if interactive {
 			tagsStr := strings.Join(tags, ",")
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Runner name").Value(&name).
 						Validate(requireValue("name")),
 					huh.NewInput().Title("Tags (comma-separated, optional)").Value(&tagsStr),
 				).Title("New runner"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 			if tagsStr != "" {

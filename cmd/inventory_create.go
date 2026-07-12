@@ -40,7 +40,7 @@ var inventoryCreateCmd = &cobra.Command{
 			if sshKeyID != 0 {
 				sshKeyIDStr = strconv.FormatInt(sshKeyID, 10)
 			}
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Inventory name").Value(&name).
 						Validate(requireValue("name")),
@@ -58,7 +58,7 @@ var inventoryCreateCmd = &cobra.Command{
 						Value(&sshKeyIDStr).
 						Validate(optionalInt("SSH key ID")),
 				).Title("New inventory"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 			sshKeyID = parseOptionalInt(sshKeyIDStr)

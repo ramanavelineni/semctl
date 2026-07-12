@@ -66,7 +66,8 @@ var runnerListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no runners found")
+			printEmptyList("runners")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)
