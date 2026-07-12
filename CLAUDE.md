@@ -37,6 +37,10 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`
 - Include key changes as bullet points in the commit body
 - Example: `feat(cmd): add CRUD commands for all project resources`
+- Every PR contains exactly ONE commit. If the branch has accumulated multiple
+  commits, squash them before opening the PR (`git reset --soft main` and
+  recommit with a message covering everything); if a PR is already open,
+  squash and force-push with `--force-with-lease`
 
 ## Declarative Apply System (`internal/apply/`)
 - Config types in `types.go`, reconciliation in `reconcile.go`, execution in `executor.go`, export in `export.go`
