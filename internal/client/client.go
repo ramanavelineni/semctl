@@ -22,9 +22,27 @@ import (
 	apiclient "github.com/ramanavelineni/semctl/pkg/semapi/client"
 )
 
-// tokenCache holds a cached API token.
+// tokenCache holds a cached API token bound to the server it was issued by.
+// Server binding stops a redefined context (e.g. from a current-directory
+// config file) from redirecting the token to a different host. Legacy cache
+// files without the server field are treated as invalid.
 type tokenCache struct {
-	Token string `json:"token"`
+	Token  string `json:"token"`
+	Server string `json:"server"`
+}
+
+// ServerID renders the canonical server identity stored in the token cache.
+func ServerID(scheme, host string, port int) string {
+	return scheme + "://" + joinHostPort(host, port)
+}
+
+// resolvedServerID returns the ServerID of the currently resolved server.
+func resolvedServerID() (string, error) {
+	host, port, scheme, err := config.ResolveServer()
+	if err != nil {
+		return "", err
+	}
+	return ServerID(scheme, host, port), nil
 }
 
 var (
@@ -138,9 +156,21 @@ func NewAuthenticatedClient() (*apiclient.Semapi, error) {
 		return nil, fmt.Errorf("no credentials available: run 'semctl login', set SEMCTL_API_TOKEN, or set SEMCTL_AUTH_USERNAME and SEMCTL_AUTH_PASSWORD")
 	}
 
+	// Stored credentials must not follow a --server/SEMCTL_SERVER redirect
+	// away from the context's configured server.
+	if config.ServerRedirected() {
+		return nil, fmt.Errorf("refusing to send context %q credentials to a --server/SEMCTL_SERVER override pointing at a different server: run 'semctl login' against it explicitly, or use SEMCTL_API_TOKEN", config.GetCurrentContext())
+	}
+
 	serverURL, err := config.GetServerURL()
 	if err != nil {
 		return nil, err
+	}
+
+	// Environment credentials follow whatever server the config resolves to;
+	// make that visible when the config came from the working directory.
+	if config.LoadedFromCWD() && config.CredentialsFromEnv() {
+		style.Warning(fmt.Sprintf("Logging in to %s (from %s) with environment credentials — verify this server is yours.", serverURL, config.ConfigFilePath()))
 	}
 
 	token, err := LoginAndCreateToken(serverURL, username, password)
@@ -167,7 +197,10 @@ func newClientWithToken(token string, allowReauth bool) (*apiclient.Semapi, erro
 		return nil, err
 	}
 
-	if allowReauth && config.GetUsername() != "" && config.GetPassword() != "" {
+	// No re-auth when a server override redirects away from the context's
+	// configured server — a 401 from the redirect target must not trigger a
+	// password login against it.
+	if allowReauth && !config.ServerRedirected() && config.GetUsername() != "" && config.GetPassword() != "" {
 		httpClient.Transport = &reauthTransport{base: httpClient.Transport}
 	}
 
@@ -350,7 +383,9 @@ func LoadCachedToken() (string, error) {
 	return loadCachedToken()
 }
 
-// loadCachedToken reads and validates the cached token.
+// loadCachedToken reads the cached token and verifies it was issued by the
+// server the session currently resolves to. A mismatch (context redefined,
+// server override, or legacy cache without server binding) is a cache miss.
 func loadCachedToken() (string, error) {
 	cachePath := TokenCachePath()
 	data, err := os.ReadFile(cachePath)
@@ -366,12 +401,28 @@ func loadCachedToken() (string, error) {
 	if cache.Token == "" {
 		return "", fmt.Errorf("empty token in cache")
 	}
+	if cache.Server == "" {
+		return "", fmt.Errorf("cached token has no server binding (pre-upgrade cache): run 'semctl login' to refresh it")
+	}
+
+	current, err := resolvedServerID()
+	if err != nil {
+		return "", err
+	}
+	if cache.Server != current {
+		return "", fmt.Errorf("cached token was issued by %s, not %s", cache.Server, current)
+	}
 
 	return cache.Token, nil
 }
 
 // LoadCachedTokenForContext reads the cached token for a specific context.
+// No server check: callers (logout revocation) send it only to the context's
+// own configured server.
 func LoadCachedTokenForContext(name string) (string, error) {
+	if err := config.ValidateContextName(name); err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(TokenCachePathForContext(name))
 	if err != nil {
 		return "", err
@@ -386,20 +437,29 @@ func LoadCachedTokenForContext(name string) (string, error) {
 	return cache.Token, nil
 }
 
-// SaveTokenCache writes the token to the cache file for the current context.
+// SaveTokenCache writes the token, bound to the currently resolved server,
+// to the cache file for the current context.
 func SaveTokenCache(token string) error {
-	return SaveTokenCacheForContext(config.GetCurrentContext(), token)
+	server, err := resolvedServerID()
+	if err != nil {
+		return err
+	}
+	return SaveTokenCacheForContext(config.GetCurrentContext(), server, token)
 }
 
-// SaveTokenCacheForContext writes the token to the cache file for a specific context.
-func SaveTokenCacheForContext(name, token string) error {
+// SaveTokenCacheForContext writes the token to the cache file for a specific
+// context, recording the server it was issued by (use ServerID to build it).
+func SaveTokenCacheForContext(name, server, token string) error {
+	if err := config.ValidateContextName(name); err != nil {
+		return err
+	}
 	cachePath := TokenCachePathForContext(name)
 	dir := filepath.Dir(cachePath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	cache := tokenCache{Token: token}
+	cache := tokenCache{Token: token, Server: server}
 	data, err := json.Marshal(cache)
 	if err != nil {
 		return err

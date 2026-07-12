@@ -36,6 +36,11 @@ saved credentials from the config file for the current (or specified) context.`,
 		if targetContext == "" {
 			targetContext = config.GetCurrentContext()
 		}
+		// The name lands in a token-cache file path below; logout ignores
+		// config.Load errors, so validate here.
+		if err := config.ValidateContextName(targetContext); err != nil {
+			return err
+		}
 
 		if interactive {
 			var confirm bool

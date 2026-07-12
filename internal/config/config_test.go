@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -756,5 +757,67 @@ contexts:
 	}
 	if cc.AuthPassword != "" {
 		t.Errorf("expected empty password, got %q", cc.AuthPassword)
+	}
+}
+
+func TestValidateContextName(t *testing.T) {
+	valid := []string{"default", "prod", "my-context", "ctx_2", "A1"}
+	for _, name := range valid {
+		if err := ValidateContextName(name); err != nil {
+			t.Errorf("ValidateContextName(%q) = %v, want nil", name, err)
+		}
+	}
+	invalid := []string{"", "../../evil", "a/b", `a\b`, "a.b", ".hidden", "-lead", "ctx name", strings.Repeat("x", 65)}
+	for _, name := range invalid {
+		if err := ValidateContextName(name); err == nil {
+			t.Errorf("ValidateContextName(%q) = nil, want error", name)
+		}
+	}
+}
+
+func TestLoad_RejectsTraversalCurrentContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("current_context: ../../evil\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Load(path); err == nil {
+		t.Fatal("expected error for path-traversal current_context")
+	}
+}
+
+func TestServerRedirected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	cfg := `current_context: prod
+contexts:
+  prod:
+    server:
+      host: sem.example
+      port: 3000
+`
+	if err := os.WriteFile(path, []byte(cfg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	defer SetServerOverride("")
+
+	SetServerOverride("")
+	if ServerRedirected() {
+		t.Error("no override should not redirect")
+	}
+	SetServerOverride("sem.example:3000")
+	if ServerRedirected() {
+		t.Error("override matching the context server should not redirect")
+	}
+	SetServerOverride("attacker.example:3000")
+	if !ServerRedirected() {
+		t.Error("override pointing elsewhere should redirect")
+	}
+	SetServerOverride("sem.example:9999")
+	if !ServerRedirected() {
+		t.Error("same host, different port should redirect")
 	}
 }

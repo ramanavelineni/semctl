@@ -138,7 +138,7 @@ func TestSaveTokenCacheForContext_WritesFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir)
 
-	if err := SaveTokenCacheForContext("test", "my-secret-token"); err != nil {
+	if err := SaveTokenCacheForContext("test", "http://sem.example:3000", "my-secret-token"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func TestSaveTokenCacheForContext_Permissions(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir)
 
-	if err := SaveTokenCacheForContext("perms", "tok"); err != nil {
+	if err := SaveTokenCacheForContext("perms", "http://sem.example:3000", "tok"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -185,7 +185,7 @@ func TestSaveTokenCacheForContext_CreatesDir(t *testing.T) {
 		t.Fatal("tokens dir should not exist before save")
 	}
 
-	if err := SaveTokenCacheForContext("test", "tok"); err != nil {
+	if err := SaveTokenCacheForContext("test", "http://sem.example:3000", "tok"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -198,7 +198,7 @@ func TestSaveAndLoadTokenCache_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir)
 
-	if err := SaveTokenCacheForContext("roundtrip", "rt-token-456"); err != nil {
+	if err := SaveTokenCacheForContext("roundtrip", "http://sem.example:3000", "rt-token-456"); err != nil {
 		t.Fatalf("save error: %v", err)
 	}
 
@@ -215,5 +215,59 @@ func TestSaveAndLoadTokenCache_RoundTrip(t *testing.T) {
 	}
 	if cache.Token != "rt-token-456" {
 		t.Errorf("got %q, want %q", cache.Token, "rt-token-456")
+	}
+}
+
+func TestSaveTokenCacheForContext_RejectsTraversalName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+
+	if err := SaveTokenCacheForContext("../../evil", "http://s:1", "tok"); err == nil {
+		t.Fatal("expected error for path-traversal context name")
+	}
+	if _, err := LoadCachedTokenForContext("../../evil"); err == nil {
+		t.Fatal("expected error loading a path-traversal context name")
+	}
+}
+
+func TestLoadCachedToken_ServerBinding(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("SEMCTL_SERVER", "sem.example:3000")
+
+	// No config loaded → current context is "default", server from env.
+	if err := SaveTokenCacheForContext("default", "http://sem.example:3000", "tok-1"); err != nil {
+		t.Fatalf("save error: %v", err)
+	}
+	got, err := LoadCachedToken()
+	if err != nil {
+		t.Fatalf("matching server should load: %v", err)
+	}
+	if got != "tok-1" {
+		t.Errorf("got %q, want %q", got, "tok-1")
+	}
+
+	// A different resolved server must be a cache miss, not a token send.
+	t.Setenv("SEMCTL_SERVER", "attacker.example:3000")
+	if _, err := LoadCachedToken(); err == nil {
+		t.Fatal("expected error when cached server differs from resolved server")
+	}
+}
+
+func TestLoadCachedToken_LegacyCacheRejected(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("SEMCTL_SERVER", "sem.example:3000")
+
+	path := TokenCachePathForContext("default")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"token":"old-token"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadCachedToken(); err == nil {
+		t.Fatal("expected error for pre-upgrade cache without server binding")
 	}
 }

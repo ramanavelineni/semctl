@@ -9,6 +9,8 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Data output → stdout via `output.Print()`, `output.PrintTable()`
 - Config writing uses `yaml.v3` directly (not Viper) for partial file updates
 - Auth precedence: `SEMCTL_API_TOKEN`/config api_token → cached token (`~/.cache/semctl/tokens/`) → username/password cookie login (creates + caches token). On 401 with creds available, `reauthTransport` re-logins once and retries
+- Token cache is SERVER-BOUND: the cache file stores `{token, server}` (server = `scheme://host:port`); `loadCachedToken` refuses a token whose server ≠ the currently resolved server (legacy caches without the field are invalid → one forced re-login). A `--server`/`SEMCTL_SERVER` override that differs from the context's configured server (`config.ServerRedirected()`) disables both the cached token AND the re-login/password fallback, so a redefined-context or CWD-config attack can't exfiltrate credentials. `client.ServerID(scheme,host,port)` builds the binding string
+- Context names are validated (`config.ValidateContextName`, `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) at every entry point (login/logout/context-delete/rename/ApplyContext/SaveContext, and `current_context` on Load) — they land in token-cache file paths and Viper keys, so no `/`, `..`, or `.`
 - `login` does NOT store the password unless `--save-password`; `logout` revokes the token server-side (`client.RevokeToken`)
 - Env overrides (checked in config getters via `os.Getenv`, NOT Viper AutomaticEnv): `SEMCTL_SERVER`, `SEMCTL_SCHEME`, `SEMCTL_API_TOKEN`, `SEMCTL_AUTH_USERNAME`, `SEMCTL_AUTH_PASSWORD`
 - Server resolution: `config.ResolveServer()` — `--server` flag > `SEMCTL_SERVER` > context config; parse host:port with `config.ParseHostPort` (net.SplitHostPort-based, errors on bad ports)
@@ -50,7 +52,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - On secret update: match existing secrets by name to get IDs, use `operation: "update"` for existing, `"create"` for new
 - Processing order — create: project→keys→variable_groups→repos→inventories→templates→schedules; delete: reverse
 - All resource name lookups are case-insensitive (`strings.EqualFold`); name→ID maps are keyed LOWERCASED — always `strings.ToLower` on write AND read
-- Env expansion is strict `${VAR}`-only (`expandEnv`): unset var = error in apply, warning in validate (`ParseFileOffline`); `$${VAR}` escapes; bare `$WORD` untouched
+- Env expansion is strict `${VAR}`-only (`expandEnv`): unset var = error in apply, warning in validate (`ParseFileOffline`); `$${VAR}` escapes; bare `$WORD` untouched. Runs AFTER parse (`expandConfigEnv` walks parsed string fields/slices/string-maps via reflection) so an env value can't inject YAML structure — consequently `${VAR}` only works in string fields, NOT numeric ones like `ssh_key_id`
 - Updates MERGE over existing state (`mergeStr`/`mergeID`/`mergeBool` + `Reconciler.Existing*ByID` maps): empty config field = keep server value; template bools are `*bool` (nil = keep); SurveyVars/Vaults preserved from existing on update
 - Validate rejects the literal `<set-me>` export placeholder (`ExportPlaceholder`)
 - Schedules reconcile by name like other resources (duplicate names possible server-side: first match is managed, `state: absent` deletes ALL matches); `--skip-schedules` leaves them unmanaged

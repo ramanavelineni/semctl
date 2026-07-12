@@ -439,3 +439,55 @@ func mustWriteFile(t *testing.T, path string, data []byte) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseFile_EnvValueCannotInjectStructure(t *testing.T) {
+	// An env value carrying YAML syntax must stay an inert string: expansion
+	// happens after parsing, so it can never add keys like project_state.
+	payload := "x\"\nproject_state: absent\nkeys:\n  - name: evil"
+	t.Setenv("TEST_SEMCTL_INJECT", payload)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yaml")
+	content := "project: myproj\nrepositories:\n  - name: r1\n    git_url: https://example.com/r.git\n    git_branch: ${TEST_SEMCTL_INJECT}\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	if cfg.ProjectState != "" {
+		t.Errorf("env value injected project_state = %q", cfg.ProjectState)
+	}
+	if len(cfg.Keys) != 0 {
+		t.Errorf("env value injected %d keys", len(cfg.Keys))
+	}
+	if got := cfg.Repositories[0].GitBranch; got != payload {
+		t.Errorf("git_branch = %q, want the literal payload", got)
+	}
+}
+
+func TestParseFile_EnvExpansionInMaps(t *testing.T) {
+	t.Setenv("TEST_SEMCTL_MAPVAL", "resolved-value")
+	t.Setenv("TEST_SEMCTL_MAPKEY", "RESOLVED_KEY")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yaml")
+	content := "project: myproj\nvariable_groups:\n  - group_name: vg\n    variables:\n      plain: ${TEST_SEMCTL_MAPVAL}\n      ${TEST_SEMCTL_MAPKEY}: v\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	vars := cfg.VariableGroups[0].Variables
+	if vars["plain"] != "resolved-value" {
+		t.Errorf("map value not expanded: %q", vars["plain"])
+	}
+	if _, ok := vars["RESOLVED_KEY"]; !ok {
+		t.Errorf("map key not expanded: %v", vars)
+	}
+}
