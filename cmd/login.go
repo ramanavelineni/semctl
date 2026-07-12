@@ -125,6 +125,9 @@ the password out of shell history and process listings.`,
 		if contextName == "" {
 			contextName = "default"
 		}
+		if err := config.ValidateContextName(contextName); err != nil {
+			return err
+		}
 
 		// Parse host and port from server string
 		host, port, err := config.ParseHostPort(server)
@@ -143,8 +146,8 @@ the password out of shell history and process listings.`,
 			return fmt.Errorf("authentication failed: %w", err)
 		}
 
-		// Cache the token for this context
-		if err := client.SaveTokenCacheForContext(contextName, token); err != nil {
+		// Cache the token for this context, bound to the server that issued it
+		if err := client.SaveTokenCacheForContext(contextName, client.ServerID(scheme, host, port), token); err != nil {
 			style.Warning(fmt.Sprintf("Failed to cache API token: %s", err))
 		}
 

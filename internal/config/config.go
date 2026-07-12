@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,53 @@ var serverOverride string
 // SetServerOverride overrides the server host:port for the current session.
 func SetServerOverride(hostPort string) {
 	serverOverride = hostPort
+}
+
+// contextNameRE restricts context names to filename- and Viper-safe
+// characters: no path separators or ".." (token cache paths embed the name)
+// and no dots (Viper would interpret them as nested config keys).
+var contextNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// ValidateContextName rejects context names that could escape the token-cache
+// directory or address foreign Viper keys.
+func ValidateContextName(name string) error {
+	if !contextNameRE.MatchString(name) {
+		return fmt.Errorf("invalid context name %q: use letters, digits, '-' or '_', starting with a letter or digit (max 64 chars)", name)
+	}
+	return nil
+}
+
+// ServerRedirected reports whether a session server override (--server or
+// SEMCTL_SERVER) is in effect and points somewhere other than the current
+// context's configured server. Stored credentials must not follow such a
+// redirect — the override names a server the saved login never consented to.
+func ServerRedirected() bool {
+	override := serverOverride
+	if override == "" {
+		override = os.Getenv("SEMCTL_SERVER")
+	}
+	if override == "" || v == nil {
+		return false
+	}
+	cc, err := GetContextConfig(GetCurrentContext())
+	if err != nil || cc == nil || cc.ServerHost == "" {
+		return false // configless usage: the override IS the server
+	}
+	oHost, oPort, err := ParseHostPort(override)
+	if err != nil {
+		return false // ResolveServer will surface the parse error
+	}
+	ctxPort := cc.ServerPort
+	if ctxPort == 0 {
+		ctxPort = DefaultPort
+	}
+	return !strings.EqualFold(oHost, cc.ServerHost) || oPort != ctxPort
+}
+
+// CredentialsFromEnv reports whether the username/password credentials come
+// from environment variables rather than the loaded config file.
+func CredentialsFromEnv() bool {
+	return os.Getenv("SEMCTL_AUTH_USERNAME") != "" || os.Getenv("SEMCTL_AUTH_PASSWORD") != ""
 }
 
 var v *viper.Viper
@@ -90,6 +138,14 @@ func Load(cfgFile string) error {
 		return err
 	}
 
+	// A malicious or corrupt config could set current_context to a path
+	// like "../../x" that escapes the token-cache directory downstream.
+	if name := v.GetString("current_context"); name != "" {
+		if err := ValidateContextName(name); err != nil {
+			return fmt.Errorf("config %s: current_context: %w", v.ConfigFileUsed(), err)
+		}
+	}
+
 	return nil
 }
 
@@ -116,6 +172,9 @@ func SetCurrentContext(name string) error {
 
 // ApplyContext overrides the active context for the current session.
 func ApplyContext(name string) error {
+	if err := ValidateContextName(name); err != nil {
+		return err
+	}
 	contexts := ListContexts()
 	for _, c := range contexts {
 		if c == name {
@@ -312,6 +371,9 @@ func GetOutputFormat() string {
 
 // SaveContext saves or updates a context in the config file.
 func SaveContext(name string, serverData, authData map[string]interface{}) error {
+	if err := ValidateContextName(name); err != nil {
+		return err
+	}
 	cfgPath := resolveConfigPath()
 
 	data := make(map[string]interface{})
@@ -340,6 +402,9 @@ func SaveContext(name string, serverData, authData map[string]interface{}) error
 
 // DeleteContext removes a context from the config file.
 func DeleteContext(name string) error {
+	if err := ValidateContextName(name); err != nil {
+		return err
+	}
 	cfgPath := resolveConfigPath()
 
 	data := make(map[string]interface{})
@@ -376,6 +441,12 @@ func DeleteContext(name string) error {
 
 // RenameContext renames a context in the config file.
 func RenameContext(oldName, newName string) error {
+	if err := ValidateContextName(oldName); err != nil {
+		return err
+	}
+	if err := ValidateContextName(newName); err != nil {
+		return err
+	}
 	cfgPath := resolveConfigPath()
 
 	data := make(map[string]interface{})

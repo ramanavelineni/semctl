@@ -10,43 +10,33 @@ perms) shipped on fix/cli-bug-batch and has been removed from this list.
 
 ## 1. Security Hardening
 
-Ordered by severity; items 1.1–1.2 are design-level.
+The design-level trio (token-server binding, post-parse `${VAR}` expansion, context-name
+validation) shipped on fix/security-batch. Remaining items:
 
-- **1.1 Bind cached tokens to server identity (HIGH).** Token cache
-  (`~/.cache/semctl/tokens/<context>.json`, `internal/client/client.go:340`) stores only the
-  token, keyed by context name. A CWD `semctl.yaml`/`.semctl.yaml` (auto-loaded,
-  `internal/config/config.go:74-81`) can redefine a context to point at an attacker's host —
-  the cached bearer token is sent there, and with `SEMCTL_AUTH_USERNAME/PASSWORD` set,
-  `reauthTransport` sends the password after the 401. Fix: store the server host in the cache
-  file and refuse mismatches; consider opt-in trust for CWD configs (direnv-style). Also
-  covers the `--server`-override variant (skip cached-token/password fallback when the
-  override differs from the context's server).
-- **1.2 Expand `${VAR}` after parsing, not before (MEDIUM).** `internal/apply/types.go:196`
-  expands over raw file text, so an env value containing newlines injects YAML structure
-  (e.g. a branch name containing `"\nproject_state: absent` + `apply --yes` = project
-  deletion). Walk parsed string scalars instead, or YAML-escape substituted values.
-- **1.3 Validate context names (MEDIUM).** Names flow unsanitized into cache paths
-  (`client.go:341`) — `../../foo` escapes the tokens dir (arbitrary 0600 file write on save,
-  arbitrary `.json` delete on logout/context delete). Enforce `^[A-Za-z0-9._-]+$` at all
-  entry points (`--context`, config `current_context`, `login --context`). Also closes Viper
-  key injection via dots in names (`config.go:149,270,282,294`).
-- **1.4 `env show --json` prints the password the table masks** (`cmd/env_show.go:46-54`).
+- **1.1 Env-credential redirect via CWD config (partial mitigation shipped).** The
+  server-binding fix refuses a cached token / re-login when a `--server`/`SEMCTL_SERVER`
+  override points away from the context's configured server, and warns when env credentials
+  are used with a working-directory config. Fully closing the residual path (a CWD
+  `semctl.yaml` that changes the resolved server while `SEMCTL_AUTH_USERNAME/PASSWORD` are
+  set — the login itself still goes to the config's server) needs opt-in trust for CWD
+  configs (direnv-style: prompt once, remember the path).
+- **1.2 `env show --json` prints the password the table masks** (`cmd/env_show.go:46-54`).
   Pick one policy; redact in all formats.
-- **1.5 Non-argv secret input for key/env commands.** `key create --private-key/--passphrase`
+- **1.3 Non-argv secret input for key/env commands.** `key create --private-key/--passphrase`
   and `env create --password` only accept secrets via argv (ps/shell-history leak); the
   key create Example even teaches `--private-key "$(cat ~/.ssh/id_rsa)"`. Add
   `--private-key-file` and `--password-stdin` variants.
-- **1.6 Warn when TLS verification is disabled via config.** `server.insecure_skip_verify`
+- **1.4 Warn when TLS verification is disabled via config.** `server.insecure_skip_verify`
   from a config file (including a CWD config) silently disables verification
   (`client.go:62-67`); only the `--insecure` flag is an explicit choice. Emit a warning once
   per invocation whatever the source.
-- **1.7 Token-cache lifecycle gaps.** `context rename` orphans a still-valid cached token;
+- **1.5 Token-cache lifecycle gaps.** `context rename` orphans a still-valid cached token;
   `context delete` removes the cache without server-side revocation (contrast `logout`,
   which revokes). Rename should move the cache file; delete should attempt revocation.
-- **1.8 Tighten existing config file perms on write.** `os.WriteFile(path, out, 0600)`
+- **1.6 Tighten existing config file perms on write.** `os.WriteFile(path, out, 0600)`
   leaves a pre-existing 0644 file at 0644 (`config.go:478`) — `login --save-password` into it
   stores the password world-readable. `os.Chmod(path, 0600)` after write.
-- **1.9 `getCacheDir` ignores `os.UserHomeDir` error** (`client.go:330`) — on failure the
+- **1.7 `getCacheDir` ignores `os.UserHomeDir` error** (`client.go:330`) — on failure the
   token lands in a relative `.cache/` under the CWD. Return an error instead.
 
 ---
@@ -257,8 +247,7 @@ Still pending:
 
 ## Suggested Order
 
-1. **§1.1–1.3 security items** — design-level; 1.1 needs a cache-format change.
-2. **§2.1–2.3 CI/CD** — exit codes, `--json` mutations, apply drift gate (biggest scripting wins).
-3. **§4.1 generic helpers**, then **§5–§8 new commands** on top of them.
-4. **§4.7 httptest coverage** alongside any apply work (§4.3).
-5. The rest of §3/§4 opportunistically.
+1. **§2.1–2.3 CI/CD** — exit codes, `--json` mutations, apply drift gate (biggest scripting wins).
+2. **§4.1 generic helpers**, then **§5–§8 new commands** on top of them.
+3. **§4.7 httptest coverage** alongside any apply work (§4.3).
+4. The rest of §1/§3/§4 opportunistically.

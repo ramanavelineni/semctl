@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -166,8 +167,65 @@ func expandEnv(s string) (string, []string) {
 	return out, missing
 }
 
-// ParseFile reads and parses a config file (YAML or JSON), expanding ${VAR}
-// environment variable references. Referencing an unset variable is an error.
+// expandConfigEnv expands ${VAR} references in every string field, slice
+// element, and string-map key/value of cfg. Expansion runs AFTER parsing so
+// an environment value can never alter the YAML/JSON document structure —
+// a value containing "\nproject_state: absent" stays an inert string.
+// Returns the sorted names of referenced variables not set in the environment.
+func expandConfigEnv(cfg *ApplyConfig) []string {
+	missingSet := map[string]bool{}
+	expandValue(reflect.ValueOf(cfg).Elem(), missingSet)
+
+	missing := make([]string, 0, len(missingSet))
+	for name := range missingSet {
+		missing = append(missing, name)
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func expandValue(v reflect.Value, missing map[string]bool) {
+	switch v.Kind() {
+	case reflect.String:
+		out, miss := expandEnv(v.String())
+		for _, m := range miss {
+			missing[m] = true
+		}
+		v.SetString(out)
+	case reflect.Pointer:
+		if !v.IsNil() {
+			expandValue(v.Elem(), missing)
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			expandValue(v.Field(i), missing)
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			expandValue(v.Index(i), missing)
+		}
+	case reflect.Map:
+		if v.IsNil() || v.Type().Key().Kind() != reflect.String || v.Type().Elem().Kind() != reflect.String {
+			return
+		}
+		// Map entries are not addressable; rebuild the map.
+		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			key, missK := expandEnv(iter.Key().String())
+			val, missV := expandEnv(iter.Value().String())
+			for _, m := range append(missK, missV...) {
+				missing[m] = true
+			}
+			out.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(val))
+		}
+		v.Set(out)
+	}
+}
+
+// ParseFile reads and parses a config file (YAML or JSON), then expands
+// ${VAR} environment variable references in the parsed string values.
+// Referencing an unset variable is an error.
 func ParseFile(path string) (*ApplyConfig, error) {
 	cfg, missing, err := parseFileLenient(path)
 	if err != nil {
@@ -193,23 +251,24 @@ func parseFileLenient(path string) (*ApplyConfig, []string, error) {
 		return nil, nil, fmt.Errorf("reading config file: %w", err)
 	}
 
-	expanded, missing := expandEnv(string(data))
-
 	var cfg ApplyConfig
 
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return nil, nil, fmt.Errorf("parsing YAML: %w", err)
 		}
 	case ".json":
-		if err := json.Unmarshal([]byte(expanded), &cfg); err != nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
 			return nil, nil, fmt.Errorf("parsing JSON: %w", err)
 		}
 	default:
 		return nil, nil, fmt.Errorf("unsupported file extension %q (use .yaml, .yml, or .json)", ext)
 	}
+
+	// Expand env references only after the document structure is fixed.
+	missing := expandConfigEnv(&cfg)
 
 	return &cfg, missing, nil
 }

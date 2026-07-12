@@ -18,6 +18,10 @@ var contextDeleteCmd = &cobra.Command{
 	Example: "  semctl context delete staging",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+		// Validate before the cache-file removal below builds a path from it.
+		if err := config.ValidateContextName(name); err != nil {
+			return err
+		}
 		if err := confirmAction(cmd, fmt.Sprintf("Delete context %q?", name)); err != nil {
 			return err
 		}
