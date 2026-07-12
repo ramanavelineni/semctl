@@ -2,6 +2,8 @@ package output
 
 import (
 	"testing"
+
+	"github.com/fatih/color"
 )
 
 func TestSetFormat_GetFormat_RoundTrip(t *testing.T) {
@@ -36,7 +38,39 @@ func TestDefaultFormat(t *testing.T) {
 	}
 }
 
-func TestDisableColor_DoesNotPanic(t *testing.T) {
-	// DisableColor is a no-op stub; just ensure it doesn't panic
+func TestDisableColor_SetsGlobalNoColor(t *testing.T) {
+	// --no-color routes here; it must actually switch fatih/color off
+	// (it used to be an empty stub, silently doing nothing).
+	prev := color.NoColor
+	defer func() { color.NoColor = prev }()
+
+	color.NoColor = false
 	DisableColor()
+	if !color.NoColor {
+		t.Error("DisableColor() did not set color.NoColor")
+	}
+}
+
+func TestNormalizeNilSlice(t *testing.T) {
+	var nilSlice []string
+	got := normalizeNilSlice(nilSlice)
+	s, ok := got.([]string)
+	if !ok {
+		t.Fatalf("normalizeNilSlice(nil []string) returned %T", got)
+	}
+	if s == nil || len(s) != 0 {
+		t.Errorf("want non-nil empty slice, got %#v", s)
+	}
+
+	// Non-nil slices and non-slices pass through unchanged.
+	orig := []int{1, 2}
+	if got := normalizeNilSlice(orig); len(got.([]int)) != 2 {
+		t.Errorf("non-nil slice was altered: %#v", got)
+	}
+	if got := normalizeNilSlice("str"); got != "str" {
+		t.Errorf("non-slice was altered: %#v", got)
+	}
+	if got := normalizeNilSlice(nil); got != nil {
+		t.Errorf("untyped nil was altered: %#v", got)
+	}
 }

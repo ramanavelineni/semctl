@@ -55,7 +55,8 @@ var templateListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no templates found")
+			printEmptyList("templates")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)

@@ -54,7 +54,8 @@ var taskListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no tasks found")
+			printEmptyList("tasks")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)

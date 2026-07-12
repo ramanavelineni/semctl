@@ -17,13 +17,14 @@ func TestLogoutCmd_Exists(t *testing.T) {
 	}
 }
 
-func TestLogoutCmd_ContextFlag(t *testing.T) {
-	f := logoutCmd.Flags().Lookup("context")
-	if f == nil {
-		t.Fatal("context flag not registered on logout command")
+// logout must rely on the root persistent --context flag; a local one would
+// shadow it (see the login -s shorthand bug).
+func TestLogoutCmd_NoLocalContextFlag(t *testing.T) {
+	if logoutCmd.LocalFlags().Lookup("context") != nil {
+		t.Error("logout defines a local context flag that shadows the root persistent flag")
 	}
-	if f.DefValue != "" {
-		t.Errorf("context default: got %q, want empty", f.DefValue)
+	if rootCmd.PersistentFlags().Lookup("context") == nil {
+		t.Error("root persistent context flag missing")
 	}
 }
 

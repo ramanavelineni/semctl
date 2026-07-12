@@ -52,7 +52,8 @@ var keyListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no keys found")
+			printEmptyList("keys")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)

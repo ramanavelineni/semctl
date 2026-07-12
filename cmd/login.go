@@ -112,7 +112,7 @@ the password out of shell history and process listings.`,
 				).Title("Options"),
 			)
 
-			if err := form.Run(); err != nil {
+			if err := runForm(form); err != nil {
 				return err
 			}
 		}
@@ -187,11 +187,11 @@ the password out of shell history and process listings.`,
 func init() {
 	rootCmd.AddCommand(loginCmd)
 
-	loginCmd.Flags().String("server", "", "server host:port (e.g. 10.0.0.1:3000)")
+	// --server and --context are inherited from the root persistent flags.
+	// Defining local ones here shadows them and breaks the -s shorthand.
 	loginCmd.Flags().String("scheme", "http", "server scheme (http or https)")
 	loginCmd.Flags().String("username", "", "auth username")
 	loginCmd.Flags().String("password", "", "auth password (prefer --password-stdin)")
 	loginCmd.Flags().Bool("password-stdin", false, "read the password from stdin")
 	loginCmd.Flags().Bool("save-password", false, "store the password in the config file for automatic re-login")
-	loginCmd.Flags().String("context", "", "context name for this login (default: \"default\")")
 }

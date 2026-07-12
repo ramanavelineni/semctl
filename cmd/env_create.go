@@ -33,7 +33,7 @@ var envCreateCmd = &cobra.Command{
 			return err
 		}
 		if interactive {
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Environment name").Value(&name).
 						Validate(requireValue("name")),
@@ -41,7 +41,7 @@ var envCreateCmd = &cobra.Command{
 						Description(`e.g. {"key": "value"}`).
 						Value(&jsonVars),
 				).Title("New environment"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 		}

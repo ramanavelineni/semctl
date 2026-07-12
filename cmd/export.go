@@ -82,7 +82,9 @@ Schedules are not exported (no list API).`,
 
 		// Write output
 		if outputFile != "" {
-			if err := os.WriteFile(outputFile, data, 0644); err != nil {
+			// 0600 like config and token cache: exports carry plaintext
+			// variables even though secrets are masked.
+			if err := os.WriteFile(outputFile, data, 0600); err != nil {
 				return fmt.Errorf("failed to write file: %w", err)
 			}
 			style.Success(fmt.Sprintf("Exported to %s", outputFile))

@@ -39,14 +39,14 @@ saved credentials from the config file for the current (or specified) context.`,
 
 		if interactive {
 			var confirm bool
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewConfirm().
 						Title("Log out?").
 						Description(fmt.Sprintf("This will revoke the API token and remove credentials for context %q.", targetContext)).
 						Value(&confirm),
 				),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 			if !confirm {
@@ -93,6 +93,6 @@ saved credentials from the config file for the current (or specified) context.`,
 
 func init() {
 	rootCmd.AddCommand(logoutCmd)
-
-	logoutCmd.Flags().String("context", "", "context to log out of (default: current context)")
+	// --context is inherited from the root persistent flags; a local flag
+	// here would shadow it (see login's -s shorthand bug).
 }

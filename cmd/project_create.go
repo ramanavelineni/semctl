@@ -29,13 +29,13 @@ var projectCreateCmd = &cobra.Command{
 			return err
 		}
 		if interactive {
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Project name").Value(&name).
 						Validate(requireValue("name")),
 					huh.NewConfirm().Title("Enable alerts?").Value(&alert),
 				).Title("New project"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 		}

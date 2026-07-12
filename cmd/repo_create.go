@@ -38,7 +38,7 @@ var repoCreateCmd = &cobra.Command{
 			if sshKeyID != 0 {
 				sshKeyIDStr = strconv.FormatInt(sshKeyID, 10)
 			}
-			if err := newForm(
+			if err := runForm(newForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Repository name").Value(&name).
 						Validate(requireValue("name")),
@@ -50,7 +50,7 @@ var repoCreateCmd = &cobra.Command{
 						Value(&sshKeyIDStr).
 						Validate(optionalInt("SSH key ID")),
 				).Title("New repository"),
-			).Run(); err != nil {
+			)); err != nil {
 				return err
 			}
 			sshKeyID = parseOptionalInt(sshKeyIDStr)

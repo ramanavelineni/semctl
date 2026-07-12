@@ -46,7 +46,8 @@ var projectListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no projects found")
+			printEmptyList("projects")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)

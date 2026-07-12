@@ -48,7 +48,8 @@ var userListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no users found")
+			printEmptyList("users")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)

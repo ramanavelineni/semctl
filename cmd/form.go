@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -38,6 +39,18 @@ func newForm(groups ...*huh.Group) *huh.Form {
 	return huh.NewForm(groups...).WithKeyMap(km)
 }
 
+// runForm runs a form, translating huh's abort error into errCancelled so
+// aborting a form and declining a [y/N] prompt exit identically.
+func runForm(f *huh.Form) error {
+	if err := f.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return errCancelled
+		}
+		return err
+	}
+	return nil
+}
+
 // shouldAutoInteractive decides whether a command should launch interactive mode.
 // Decision order:
 //  1. --interactive + --no-interactive → error
@@ -58,7 +71,7 @@ func shouldAutoInteractive(cmd *cobra.Command, inputsMissing bool) (bool, error)
 	}
 
 	if interactiveSet {
-		if !style.IsTTY() {
+		if !style.IsTTY() || !style.IsStdinTTY() {
 			return false, fmt.Errorf("--interactive requires a terminal")
 		}
 		return true, nil
@@ -75,7 +88,9 @@ func shouldAutoInteractive(cmd *cobra.Command, inputsMissing bool) (bool, error)
 		return false, nil
 	}
 
-	if inputsMissing && style.IsTTY() {
+	// Both streams must be terminals: forms read from stdin, so a piped or
+	// closed stdin would make huh die on EOF instead of the flag error.
+	if inputsMissing && style.IsTTY() && style.IsStdinTTY() {
 		return true, nil
 	}
 

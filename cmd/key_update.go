@@ -15,8 +15,13 @@ import (
 var keyUpdateCmd = &cobra.Command{
 	Use:   "update <id> [field=value...]",
 	Short: "Update an access key",
-	Long:  `Update an access key. Fields: name, type, login, password, private_key, passphrase.`,
-	Args:  cobra.MinimumNArgs(1),
+	Long: `Update an access key. Fields: name, type, login, password, private_key, passphrase.
+
+The API replaces the stored secret as a whole: updating any of login, password,
+private_key, or passphrase requires the key's secret field to be included too
+(private_key for ssh keys, password for login_password keys). Updating only
+name or type leaves the stored secret untouched.`,
+	Args: cobra.MinimumNArgs(1),
 	Example: `  semctl key update 1 name="Renamed Key"
   semctl key update 2 login=newuser password=newpass`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -67,8 +72,7 @@ var keyUpdateCmd = &cobra.Command{
 
 		// Track sub-struct fields
 		var login, password, privateKey, passphrase string
-		hasLoginFields := false
-		hasSSHFields := false
+		hasSecretFields := false
 
 		for _, arg := range args[1:] {
 			key, value, ok := strings.Cut(arg, "=")
@@ -82,37 +86,49 @@ var keyUpdateCmd = &cobra.Command{
 				req.Type = value
 			case "login":
 				login = value
-				hasLoginFields = true
-				hasSSHFields = true
+				hasSecretFields = true
 			case "password":
 				password = value
-				hasLoginFields = true
+				hasSecretFields = true
 			case "private_key":
 				privateKey = value
-				hasSSHFields = true
+				hasSecretFields = true
 			case "passphrase":
 				passphrase = value
-				hasSSHFields = true
+				hasSecretFields = true
 			default:
 				return fmt.Errorf("unknown field %q — valid fields: name, type, login, password, private_key, passphrase", key)
 			}
 		}
 
-		if hasSSHFields && req.Type == "ssh" {
-			req.SSH = &models.AccessKeyRequestSSH{
-				Login:      login,
-				PrivateKey: privateKey,
-				Passphrase: passphrase,
+		// The API cannot partially update secrets: with OverrideSecret set it
+		// replaces the whole sub-struct, so a lone login= would silently wipe
+		// the stored private key. Only override when the full secret is given;
+		// otherwise (name/type-only updates) the server keeps the old secret.
+		if hasSecretFields {
+			switch req.Type {
+			case "ssh":
+				if privateKey == "" {
+					return fmt.Errorf("updating ssh key fields replaces the stored secret: include private_key= alongside login=/passphrase=")
+				}
+				req.SSH = &models.AccessKeyRequestSSH{
+					Login:      login,
+					PrivateKey: privateKey,
+					Passphrase: passphrase,
+				}
+			case "login_password":
+				if password == "" {
+					return fmt.Errorf("updating login_password key fields replaces the stored secret: include password= alongside login=")
+				}
+				req.LoginPassword = &models.AccessKeyRequestLoginPassword{
+					Login:    login,
+					Password: password,
+				}
+			default:
+				return fmt.Errorf("key %d has type %q, which has no login/password/private_key/passphrase fields", id, req.Type)
 			}
+			req.OverrideSecret = true
 		}
-		if hasLoginFields && req.Type == "login_password" {
-			req.LoginPassword = &models.AccessKeyRequestLoginPassword{
-				Login:    login,
-				Password: password,
-			}
-		}
-
-		req.OverrideSecret = true
 
 		putParams := key_store.NewPutProjectProjectIDKeysKeyIDParams()
 		putParams.ProjectID = int64(pid)

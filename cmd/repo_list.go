@@ -54,7 +54,8 @@ var repoListCmd = &cobra.Command{
 		}
 
 		if len(rows) == 0 {
-			return fmt.Errorf("no repositories found")
+			printEmptyList("repositories")
+			return nil
 		}
 
 		output.PrintTable(headers, rows)
