@@ -34,7 +34,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Token APIs use `apiClient.Authentication` (GetUserTokens, PostUserTokens, DeleteUserTokensAPITokenID)
 - Event APIs use `apiClient.Operations` (GetEvents, GetEventsLast)
 - Key resource has no GET-by-ID endpoint — fetch from list and filter by ID
-- APIToken.ID is a `string` (not int64 like other resource IDs)
+- APIToken.ID is a `string` (not int64 like other resource IDs); 2.18 MASKS token IDs in the list response (8-char prefix) — DELETE /user/tokens/{id} accepts either the prefix or the full token (live-verified)
 - Schedule list endpoint (GET /project/{id}/schedules) is implemented by the server but missing from the official spec — scripts/patch-spec.py adds it (and Schedule.tpl_name) before client generation; the list returns ScheduleWithTpl objects
 
 ## Commit Style (Mandatory)

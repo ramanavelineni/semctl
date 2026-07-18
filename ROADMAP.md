@@ -132,8 +132,8 @@ migrated (~360 lines removed). New resource commands (§5–§8) must use them. 
   HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
 - **4.5 Server version awareness.** Client targets 2.18.20; no version detection exists.
   Runner/user-options commands 404 raw on older servers, and a schedules-list 404 aborts an
-  entire apply plan even for configs without schedules. Fetch `GET /api/info` once per
-  session (see §8), warn on mismatch, degrade gracefully.
+  entire apply plan even for configs without schedules. Fetch it once per session (`semctl info` /
+  `Operations.GetInfo` now exist), warn on mismatch, degrade gracefully.
 - **4.6 httptest coverage for executor/reconciler.** `internal/apply/executor.go` has zero
   test coverage and reconcile's API paths are untested — the riskiest code rides on manual
   container smoke tests. Point the go-swagger transport at an `httptest.Server` with canned
@@ -144,91 +144,11 @@ migrated (~360 lines removed). New resource commands (§5–§8) must use them. 
 
 ---
 
-## 5. Schedule Commands
+Schedule, token, event, and info commands (old §5–§8) shipped on
+feat/new-resource-commands — all built on the cmd/resource_helpers.go pattern and
+live-tested against v2.18.20 (`semctl info` also unlocks version awareness, §4.5).
 
-Cron-based task scheduling. Project-scoped. Apply/export already reconcile schedules
-declaratively; these are the imperative commands.
-
-### API Endpoints (via `apiClient.Schedule`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GetProjectProjectIDSchedules` | `GET /project/{project_id}/schedules` | List schedules (spec-patched via `scripts/patch-spec.py`; returns `ScheduleWithTpl` incl. `tpl_name`) |
-| `PostProjectProjectIDSchedules` | `POST /project/{project_id}/schedules` | Create schedule |
-| `GetProjectProjectIDSchedulesScheduleID` | `GET /project/{project_id}/schedules/{schedule_id}` | Get schedule |
-| `PutProjectProjectIDSchedulesScheduleID` | `PUT /project/{project_id}/schedules/{schedule_id}` | Update schedule |
-| `DeleteProjectProjectIDSchedulesScheduleID` | `DELETE /project/{project_id}/schedules/{schedule_id}` | Delete schedule |
-
-### Models
-
-**`models.Schedule`** fields: `ID`, `Name`, `ProjectID`, `TemplateID`, `CronFormat`,
-`Active` (bool), `Type` (enum: `""`, `"run_at"`), `RunAt` (datetime), `TaskParams` (*TaskPrams)
-
-### Files to create
-
-- `cmd/schedule.go` — parent command (alias `sched`)
-- `cmd/schedule_list.go` — table: ID, Name, Template (tpl_name), Cron, Active
-- `cmd/schedule_show.go` — Field/Value table
-- `cmd/schedule_create.go` — flags: `--name`, `--template-id` (required), `--cron-format`, `--active`, `--type`, `--run-at`
-- `cmd/schedule_update.go` — `<id> [field=value...]`: name, template_id, cron_format, active, type, run_at
-- `cmd/schedule_delete.go` — standard confirmation + delete
-
----
-
-## 6. Token Commands
-
-API token management for the logged-in user. Uses `apiClient.Authentication`.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GetUserTokens` | `GET /user/tokens` | List tokens |
-| `PostUserTokens` | `POST /user/tokens` | Create token |
-| `DeleteUserTokensAPITokenID` | `DELETE /user/tokens/{api_token_id}` | Expire/delete token |
-
-**`models.APIToken`** fields: `ID` (string — not int64 like other resources), `UserID`,
-`Created`, `Expired` (bool)
-
-### Files to create
-
-- `cmd/token.go` — parent command
-- `cmd/token_list.go` — table: ID, User ID, Created, Expired
-- `cmd/token_create.go` — prints the new token to stdout (pipeable, like `runner token`)
-- `cmd/token_delete.go` — string ID; standard confirmation
-
-### Notes
-- The token ID *is* the token — treat list/create output accordingly (stdout, maskable).
-- Not project-scoped (user-level). No update endpoint.
-- Nice pairing with 1.5/2.3: a `token prune` or revoke-on-exit story for CI-minted tokens.
-
----
-
-## 7. Event Commands
-
-Read-only event listing. Global scope. Uses `apiClient.Operations`.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GetEvents` | `GET /events` | Get events for user's projects |
-| `GetEventsLast` | `GET /events/last` | Get last 200 events |
-
-**`models.Event`** fields: `Description`, `ObjectID`, `ObjectType`, `ProjectID`, `UserID`
-
-### Files to create
-
-- `cmd/event.go` — parent command
-- `cmd/event_list.go` — `GetEventsLast` by default, `--all` for `GetEvents`; table:
-  Project ID, User ID, Object Type, Object ID, Description
-
----
-
-## 8. Server Info Command
-
-`cmd/info.go` — `semctl info`, calls `apiClient.Operations.GetInfo`, displays Semaphore
-server version and configuration. Doubles as the fetch point for version awareness (4.5).
-
----
-
-## 9. Remaining Interactive-Form Work
+## 5. Remaining Interactive-Form Work
 
 Create-command forms shipped (all 7 creates + `user create` + login/logout/user password).
 Still pending:
@@ -241,6 +161,6 @@ Still pending:
 
 ## Suggested Order
 
-1. **§5–§8 new commands** (schedule/token/event/info) on the new helper pattern.
-2. **§4.6 httptest coverage** alongside any apply work (§4.2).
-3. The rest of §1/§2/§3/§4 opportunistically.
+1. **§4.6 httptest coverage** alongside any apply work (§4.2).
+2. **§4.5 server version awareness** (cheap now that `semctl info` exists).
+3. The rest of §1/§2/§3/§5 opportunistically.

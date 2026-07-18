@@ -58,6 +58,10 @@ history.
 | `env` | Manage variable groups (environments) |
 | `runner` | Manage task runners — global or per-project (Semaphore 2.18+) |
 | `user` | Manage users, passwords, and per-user options |
+| `schedule` | Manage cron/one-shot task schedules |
+| `token` | Manage API tokens for the logged-in user |
+| `event` | List events for your projects |
+| `info` | Show Semaphore server version and configuration |
 | `apply` | Apply declarative configuration files |
 | `export` | Export project state to YAML/JSON |
 | `validate` | Validate configuration files offline |

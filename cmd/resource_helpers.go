@@ -67,12 +67,18 @@ func runShow[T any](what string, fetch func() (T, error), fields func(T) [][]str
 // runDelete executes the shared delete-command flow: confirm, delete, report.
 // what is singular ("template").
 func runDelete(cmd *cobra.Command, what string, id int64, del func() error) error {
-	if err := confirmAction(cmd, fmt.Sprintf("Delete %s %d?", what, id)); err != nil {
+	return runDeleteNamed(cmd, what, strconv.FormatInt(id, 10), del)
+}
+
+// runDeleteNamed is runDelete for resources with non-numeric identifiers
+// (e.g. API tokens, whose ID is a string).
+func runDeleteNamed(cmd *cobra.Command, what, ident string, del func() error) error {
+	if err := confirmAction(cmd, fmt.Sprintf("Delete %s %s?", what, ident)); err != nil {
 		return err
 	}
 	if err := del(); err != nil {
 		return fmt.Errorf("failed to delete %s: %w", what, err)
 	}
-	style.Success(fmt.Sprintf("Deleted %s %d", what, id))
+	style.Success(fmt.Sprintf("Deleted %s %s", what, ident))
 	return nil
 }
