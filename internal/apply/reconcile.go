@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/style"
 	apiclient "github.com/ramanavelineni/semctl/pkg/semapi/client"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/inventory"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
@@ -122,6 +124,16 @@ func (r *Reconciler) reconcileSchedules(plan *Plan) error {
 	params.ProjectID = r.projectID
 	resp, err := r.client.Schedule.GetProjectProjectIDSchedules(params, nil)
 	if err != nil {
+		// Older Semaphore servers have no schedules-list endpoint; leave
+		// schedules unmanaged instead of failing the whole plan.
+		if client.IsNotFound(err) {
+			msg := "Server has no schedules API (Semaphore < 2.18?) — schedules left unmanaged."
+			if len(r.config.Schedules) > 0 {
+				msg = fmt.Sprintf("Server has no schedules API (Semaphore < 2.18?) — the %d schedule(s) in this config will NOT be applied.", len(r.config.Schedules))
+			}
+			style.Warning(msg)
+			return nil
+		}
 		return err
 	}
 

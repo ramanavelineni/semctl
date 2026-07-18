@@ -26,6 +26,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Exit codes (cmd/exitcodes.go, mapped in `Execute()` via `exitCodeFor`): 1 generic, 2 apply drift (`--detailed-exitcode`), 3 auth (client.ErrNoCredentials/ErrAuthFailed sentinels + 401/403), 4 not-found (404), 5 cancelled (errCancelled), 6 task failed, 7 wait timeout. Attach specific codes with `withExitCode(err, code)`
 - Under `--json`/`--yaml`, `task run` and all create commands print the created resource to stdout (env create clears `Password` first); `apply` prints `[]apply.PlanJSON` plan docs to stdout
 - All API calls pass `nil` for authInfo, relying on `transport.DefaultAuthentication`
+- Version awareness: `client.TargetSemaphoreVersion` (major.minor, BUMP when regenerating the client), `client.WarnIfVersionMismatch(api)` (once per process, called by apply), `client.HTTPStatus(err)`/`client.IsNotFound(err)` for go-swagger status extraction. List-endpoint 404s get a version hint in `runList`; apply's schedule reconciliation tolerates a missing schedules API (pre-2.18) by leaving schedules unmanaged with a warning
 
 ## API Client Gotchas
 - `getProjectID(cmd)` returns `int32` but API params expect `int64` — always cast with `int64(pid)`

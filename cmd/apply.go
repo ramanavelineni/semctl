@@ -57,6 +57,10 @@ Bare $WORD text (no braces) is left untouched.`,
 			return err
 		}
 
+		// Apply mutates many resources at once — worth one extra request to
+		// flag a client/server version mismatch before anything changes.
+		client.WarnIfVersionMismatch(apiClient)
+
 		totalCreates, totalUpdates, totalDeletes := 0, 0, 0
 		totalErrors := 0
 		anyChanges := false
