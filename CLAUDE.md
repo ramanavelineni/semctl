@@ -39,6 +39,9 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - APIToken.ID is a `string` (not int64 like other resource IDs); 2.18 MASKS token IDs in the list response (8-char prefix) — DELETE /user/tokens/{id} accepts either the prefix or the full token (live-verified)
 - Schedule list endpoint (GET /project/{id}/schedules) is implemented by the server but missing from the official spec — scripts/patch-spec.py adds it (and Schedule.tpl_name) before client generation; the list returns ScheduleWithTpl objects
 
+## Releases
+- Release flow: docs PR adding a row to COMPATIBILITY.md (NOT the README — the README Compatibility section is just a pointer) → merge → tag vX.Y.Z on that merge commit via gh API refs (triggers release.yml/goreleaser)
+
 ## Commit Style (Mandatory)
 - Use [Conventional Commits](https://www.conventionalcommits.org): `type(scope): description`
 - Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`
