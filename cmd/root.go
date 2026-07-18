@@ -16,9 +16,19 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "semctl",
-	Short:        "Semaphore UI CLI",
-	Long:         "A command-line interface for managing Semaphore UI via its REST API.",
+	Use:   "semctl",
+	Short: "Semaphore UI CLI",
+	Long: `A command-line interface for managing Semaphore UI via its REST API.
+
+Exit codes:
+  0  success
+  1  generic error
+  2  changes pending (apply --detailed-exitcode)
+  3  authentication failure
+  4  resource not found
+  5  cancelled by user
+  6  task finished with error/stopped status (task run --wait)
+  7  wait timeout expired (task run --wait-timeout)`,
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Session-level flags apply to every command, including those that
@@ -85,7 +95,7 @@ var rootCmd = &cobra.Command{
 func Execute() {
 	enforceSubcommands(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		os.Exit(exitCodeFor(err))
 	}
 }
 

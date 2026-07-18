@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -69,6 +70,10 @@ var projectCreateCmd = &cobra.Command{
 
 		p := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created project %q (ID: %d)", p.Name, p.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(p, nil, nil)
+		}
 		return nil
 	},
 }

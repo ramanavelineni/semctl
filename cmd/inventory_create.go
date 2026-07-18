@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/inventory"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -97,6 +98,10 @@ var inventoryCreateCmd = &cobra.Command{
 
 		inv := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created inventory %q (ID: %d)", inv.Name, inv.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(inv, nil, nil)
+		}
 		return nil
 	},
 }

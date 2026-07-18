@@ -6,6 +6,7 @@ import (
 
 	"github.com/ramanavelineni/semctl/internal/apply"
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/spf13/cobra"
 )
@@ -28,11 +29,17 @@ Bare $WORD text (no braces) is left untouched.`,
   semctl apply -f keys.yaml -f templates.yaml
   semctl apply -f ./semaphore/
   semctl apply -f project.yaml --dry-run
-  semctl apply -f project.json --yes`,
+  semctl apply -f project.json --yes
+
+  # GitOps drift gate: exit 0 = in sync, 2 = changes pending, 1 = error
+  semctl apply -f ./semaphore/ --dry-run --detailed-exitcode
+  # Machine-readable plan on stdout
+  semctl apply -f project.yaml --dry-run --json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePaths, _ := cmd.Flags().GetStringArray("file")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		skipSchedules, _ := cmd.Flags().GetBool("skip-schedules")
+		detailedExit, _ := cmd.Flags().GetBool("detailed-exitcode")
 
 		if len(filePaths) == 0 {
 			return fmt.Errorf("--file (-f) is required")
@@ -52,6 +59,8 @@ Bare $WORD text (no braces) is left untouched.`,
 
 		totalCreates, totalUpdates, totalDeletes := 0, 0, 0
 		totalErrors := 0
+		anyChanges := false
+		var planDocs []apply.PlanJSON
 
 		for _, f := range files {
 			if len(files) > 1 {
@@ -82,12 +91,14 @@ Bare $WORD text (no braces) is left untouched.`,
 				continue
 			}
 
+			planDocs = append(planDocs, plan.JSON(f))
 			fmt.Fprint(os.Stderr, plan.FormatPlan())
 
 			if !plan.HasChanges() {
 				style.Success("No changes needed.")
 				continue
 			}
+			anyChanges = true
 
 			if dryRun {
 				style.Info("Dry run — no changes applied.")
@@ -112,6 +123,11 @@ Bare $WORD text (no braces) is left untouched.`,
 			fmt.Fprintln(os.Stderr)
 		}
 
+		// Machine-readable plans on stdout (human plans went to stderr above).
+		if output.GetFormat() != output.FormatTable {
+			output.Print(planDocs, nil, nil)
+		}
+
 		if totalErrors > 0 {
 			return fmt.Errorf("apply completed with %d error(s) (%d created, %d updated, %d deleted)",
 				totalErrors, totalCreates, totalUpdates, totalDeletes)
@@ -120,6 +136,11 @@ Bare $WORD text (no braces) is left untouched.`,
 		if !dryRun && (totalCreates+totalUpdates+totalDeletes) > 0 {
 			style.Success(fmt.Sprintf("Apply complete: %d created, %d updated, %d deleted.",
 				totalCreates, totalUpdates, totalDeletes))
+		}
+
+		// Terraform-plan convention for drift gates: 2 = changes present.
+		if detailedExit && anyChanges {
+			return withExitCode(fmt.Errorf("changes detected (--detailed-exitcode)"), exitDrift)
 		}
 		return nil
 	},
@@ -131,4 +152,5 @@ func init() {
 	applyCmd.Flags().StringArrayP("file", "f", nil, "config file or directory (can be specified multiple times)")
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
 	applyCmd.Flags().Bool("skip-schedules", false, "leave schedule resources unmanaged by this apply")
+	applyCmd.Flags().Bool("detailed-exitcode", false, "exit 2 when the plan has changes, 0 when in sync (1 = error); combine with --dry-run for drift gates")
 }

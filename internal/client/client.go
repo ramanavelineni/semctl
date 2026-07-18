@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -46,6 +47,13 @@ func resolvedServerID() (string, error) {
 }
 
 var (
+	// ErrNoCredentials means no token or username/password is configured.
+	// Exposed as a sentinel so the CLI can map it to a distinct exit code.
+	ErrNoCredentials = errors.New("no credentials available")
+
+	// ErrAuthFailed means the server rejected the provided credentials.
+	ErrAuthFailed = errors.New("the server rejected the credentials")
+
 	// requestTimeout is the per-request HTTP timeout.
 	requestTimeout = 30 * time.Second
 
@@ -153,7 +161,7 @@ func NewAuthenticatedClient() (*apiclient.Semapi, error) {
 	username := config.GetUsername()
 	password := config.GetPassword()
 	if username == "" || password == "" {
-		return nil, fmt.Errorf("no credentials available: run 'semctl login', set SEMCTL_API_TOKEN, or set SEMCTL_AUTH_USERNAME and SEMCTL_AUTH_PASSWORD")
+		return nil, fmt.Errorf("%w: run 'semctl login', set SEMCTL_API_TOKEN, or set SEMCTL_AUTH_USERNAME and SEMCTL_AUTH_PASSWORD", ErrNoCredentials)
 	}
 
 	// Stored credentials must not follow a --server/SEMCTL_SERVER redirect
@@ -306,6 +314,9 @@ func LoginAndCreateToken(serverURL, username, password string) (string, error) {
 	defer loginResp.Body.Close()
 
 	if loginResp.StatusCode != http.StatusNoContent && loginResp.StatusCode != http.StatusOK {
+		if loginResp.StatusCode == http.StatusUnauthorized || loginResp.StatusCode == http.StatusForbidden {
+			return "", fmt.Errorf("%w (status %d)", ErrAuthFailed, loginResp.StatusCode)
+		}
 		return "", fmt.Errorf("login failed (status %d)", loginResp.StatusCode)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -122,6 +123,10 @@ var keyCreateCmd = &cobra.Command{
 
 		k := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created key %q (ID: %d)", k.Name, k.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(k, nil, nil)
+		}
 		return nil
 	},
 }

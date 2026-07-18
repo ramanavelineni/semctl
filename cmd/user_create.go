@@ -10,6 +10,7 @@ import (
 	"github.com/go-openapi/strfmt"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/user"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -92,6 +93,10 @@ var userCreateCmd = &cobra.Command{
 
 		u := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created user %q (ID: %d)", u.Username, u.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(u, nil, nil)
+		}
 		return nil
 	},
 }
