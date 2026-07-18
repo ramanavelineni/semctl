@@ -47,26 +47,13 @@ migrated (~360 lines removed). httptest coverage for the apply executor/reconcil
 shipped on test/apply-httptest (fake in-memory Semaphore server; apply package 29%→65%).
 Remaining:
 
-- **4.1 Apply sharp edges:**
-  - Unresolvable name refs return `0` silently (`reconcile.go:842`) — a typo'd
-    `ssh_key: my-kye` creates a repo with `SSHKeyID: 0`. Return errors naming the reference.
-  - On partial failure the executor attempts dependents of failed creates. Track failed
-    labels and skip dependents; add `--fail-fast`.
-  - Surface field-level diffs in the plan — `needsUpdate` already computes them but returns
-    bool; return changed field names into `Plan.Description`.
-  - `yaml.KnownFields(true)` for apply files — a typo'd `enviroment_variables:` is silently
-    dropped today, meaning secrets silently don't get applied.
-  - Compare variable-group JSON semantically (unmarshal both sides) — string comparison
-    causes false-positive updates on key order/whitespace (`reconcile.go:709-722`).
-  - Document that merge semantics can't unset a field (empty = keep); consider a
-    `field: null` convention if apply should be a full source of truth.
-- **4.2 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
+- **4.1 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
   yaml.v3 writes verbatim — a context named `Prod` lists as `prod` and a save can create a
   duplicate `prod:` key Viper then merges unpredictably. Writes destroy comments and aren't
   atomic (no temp+rename, no lock) — concurrent `login`s can corrupt the file. Env overrides
   are already manual `os.Getenv`, so Viper earns little here. Normalize context names
   (lowercase at the boundary, as apply does) and write atomically.
-- **4.3 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
+- **4.2 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
   anywhere; Ctrl-C kills mid-apply with no resumability note and can't cancel in-flight
   HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
 

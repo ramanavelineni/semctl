@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -82,6 +83,9 @@ func (r *Reconciler) BuildPlan() (*Plan, error) {
 	// If project is new, everything is a create
 	if projectAction.Action == ActionCreate {
 		r.buildAllAsCreate(plan)
+		if err := r.validateNameRefs(); err != nil {
+			return nil, err
+		}
 		return plan, nil
 	}
 
@@ -112,6 +116,10 @@ func (r *Reconciler) BuildPlan() (*Plan, error) {
 
 	if err := r.reconcileSchedules(plan); err != nil {
 		return nil, fmt.Errorf("reconciling schedules: %w", err)
+	}
+
+	if err := r.validateNameRefs(); err != nil {
+		return nil, err
 	}
 
 	return plan, nil
@@ -176,12 +184,16 @@ func (r *Reconciler) reconcileSchedules(plan *Plan) error {
 			desc = fmt.Sprintf("%d schedules share this name; managing ID %d — set state: absent once to delete all copies, then re-apply", len(matches), first.ID)
 		}
 
-		if r.scheduleNeedsUpdate(entry, first) {
+		if fields := r.scheduleChangedFields(entry, first); len(fields) > 0 {
+			fieldDesc := strings.Join(fields, ", ")
+			if desc != "" {
+				fieldDesc += "; " + desc
+			}
 			plan.Actions = append(plan.Actions, ResourceAction{
 				Type:        ResourceSchedule,
 				Action:      ActionUpdate,
 				Label:       entry.Name,
-				Description: desc,
+				Description: fieldDesc,
 				ExistingID:  first.ID,
 				Index:       i,
 			})
@@ -448,12 +460,12 @@ func (r *Reconciler) reconcileKeys(plan *Plan) error {
 				Label:  entry.Name,
 				Index:  i,
 			})
-		} else if keyNeedsUpdate(entry, existingKey) {
+		} else if fields := keyChangedFields(entry, existingKey); len(fields) > 0 {
 			plan.Actions = append(plan.Actions, ResourceAction{
 				Type:        ResourceKey,
 				Action:      ActionUpdate,
 				Label:       entry.Name,
-				Description: "secrets always re-applied",
+				Description: strings.Join(fields, ", "),
 				ExistingID:  existingKey.ID,
 				Index:       i,
 			})
@@ -506,13 +518,14 @@ func (r *Reconciler) reconcileVariableGroups(plan *Plan) error {
 				Label:  entry.Name,
 				Index:  i,
 			})
-		} else if varGroupNeedsUpdate(entry, existingEnv) {
+		} else if fields := varGroupChangedFields(entry, existingEnv); len(fields) > 0 {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:       ResourceVariableGroup,
-				Action:     ActionUpdate,
-				Label:      entry.Name,
-				ExistingID: existingEnv.ID,
-				Index:      i,
+				Type:        ResourceVariableGroup,
+				Action:      ActionUpdate,
+				Label:       entry.Name,
+				Description: strings.Join(fields, ", "),
+				ExistingID:  existingEnv.ID,
+				Index:       i,
 			})
 		} else {
 			plan.Actions = append(plan.Actions, ResourceAction{
@@ -564,13 +577,14 @@ func (r *Reconciler) reconcileRepositories(plan *Plan) error {
 				Label:  entry.Name,
 				Index:  i,
 			})
-		} else if r.repoNeedsUpdate(entry, existingRepo) {
+		} else if fields := r.repoChangedFields(entry, existingRepo); len(fields) > 0 {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:       ResourceRepository,
-				Action:     ActionUpdate,
-				Label:      entry.Name,
-				ExistingID: existingRepo.ID,
-				Index:      i,
+				Type:        ResourceRepository,
+				Action:      ActionUpdate,
+				Label:       entry.Name,
+				Description: strings.Join(fields, ", "),
+				ExistingID:  existingRepo.ID,
+				Index:       i,
 			})
 		} else {
 			plan.Actions = append(plan.Actions, ResourceAction{
@@ -622,13 +636,14 @@ func (r *Reconciler) reconcileInventories(plan *Plan) error {
 				Label:  entry.Name,
 				Index:  i,
 			})
-		} else if r.inventoryNeedsUpdate(entry, existingInv) {
+		} else if fields := r.inventoryChangedFields(entry, existingInv); len(fields) > 0 {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:       ResourceInventory,
-				Action:     ActionUpdate,
-				Label:      entry.Name,
-				ExistingID: existingInv.ID,
-				Index:      i,
+				Type:        ResourceInventory,
+				Action:      ActionUpdate,
+				Label:       entry.Name,
+				Description: strings.Join(fields, ", "),
+				ExistingID:  existingInv.ID,
+				Index:       i,
 			})
 		} else {
 			plan.Actions = append(plan.Actions, ResourceAction{
@@ -680,13 +695,14 @@ func (r *Reconciler) reconcileTemplates(plan *Plan) error {
 				Label:  entry.Name,
 				Index:  i,
 			})
-		} else if r.templateNeedsUpdate(entry, existingTpl) {
+		} else if fields := r.templateChangedFields(entry, existingTpl); len(fields) > 0 {
 			plan.Actions = append(plan.Actions, ResourceAction{
-				Type:       ResourceTemplate,
-				Action:     ActionUpdate,
-				Label:      entry.Name,
-				ExistingID: existingTpl.ID,
-				Index:      i,
+				Type:        ResourceTemplate,
+				Action:      ActionUpdate,
+				Label:       entry.Name,
+				Description: strings.Join(fields, ", "),
+				ExistingID:  existingTpl.ID,
+				Index:       i,
 			})
 		} else {
 			plan.Actions = append(plan.Actions, ResourceAction{
@@ -701,143 +717,284 @@ func (r *Reconciler) reconcileTemplates(plan *Plan) error {
 	return nil
 }
 
-// NeedsUpdate helpers
+// NeedsUpdate helpers: each xChangedFields returns the names of fields the
+// config would change (shown in the plan); xNeedsUpdate wraps it as a bool.
 
-// keyNeedsUpdate returns true if the key type differs or secrets are specified.
-// Secrets are never returned by the API, so we always update if SSH/login_password data is provided.
-func keyNeedsUpdate(entry KeyEntry, existing *models.AccessKey) bool {
+// keyChangedFields: secrets are never returned by the API, so specifying
+// them always re-applies.
+func keyChangedFields(entry KeyEntry, existing *models.AccessKey) []string {
+	var fields []string
 	if entry.Type != existing.Type {
-		return true
+		fields = append(fields, "type")
 	}
-	if entry.SSH != nil && entry.SSH.PrivateKey != "" {
-		return true
+	if (entry.SSH != nil && entry.SSH.PrivateKey != "") ||
+		(entry.LoginPassword != nil && entry.LoginPassword.Password != "") {
+		fields = append(fields, "secrets (always re-applied)")
 	}
-	if entry.LoginPassword != nil && entry.LoginPassword.Password != "" {
-		return true
+	return fields
+}
+
+func keyNeedsUpdate(entry KeyEntry, existing *models.AccessKey) bool {
+	return len(keyChangedFields(entry, existing)) > 0
+}
+
+// jsonVarsEqual compares a config variables map against the server-side JSON
+// string semantically, so key order and whitespace differences don't produce
+// phantom updates. Unparseable server JSON counts as different (safe: the
+// PUT is idempotent).
+func jsonVarsEqual(entryVars map[string]string, existingJSON string) bool {
+	var existing map[string]any
+	if err := json.Unmarshal([]byte(existingJSON), &existing); err != nil {
+		return false
 	}
-	return false
+	if len(existing) != len(entryVars) {
+		return false
+	}
+	for k, v := range entryVars {
+		ev, ok := existing[k]
+		if !ok {
+			return false
+		}
+		es, ok := ev.(string)
+		if !ok || es != v {
+			return false
+		}
+	}
+	return true
+}
+
+func varGroupChangedFields(entry VariableGroupEntry, existing *models.Environment) []string {
+	var fields []string
+	if len(entry.Variables) > 0 && !jsonVarsEqual(entry.Variables, existing.JSON) {
+		fields = append(fields, "variables")
+	}
+	if len(entry.EnvironmentVariables) > 0 && !jsonVarsEqual(entry.EnvironmentVariables, existing.Env) {
+		fields = append(fields, "environment_variables")
+	}
+	if len(entry.Secrets) > 0 || len(entry.SecretEnvironmentVariables) > 0 {
+		fields = append(fields, "secrets (always re-applied)")
+	}
+	return fields
 }
 
 func varGroupNeedsUpdate(entry VariableGroupEntry, existing *models.Environment) bool {
-	varsJSON := VarsToJSON(entry.Variables)
-	if varsJSON != "{}" && varsJSON != existing.JSON {
-		return true
+	return len(varGroupChangedFields(entry, existing)) > 0
+}
+
+func (r *Reconciler) repoChangedFields(entry RepoEntry, existing *models.Repository) []string {
+	var fields []string
+	if entry.GitURL != "" && entry.GitURL != existing.GitURL {
+		fields = append(fields, "git_url")
 	}
-	envStr := EnvVarsToJSON(entry.EnvironmentVariables)
-	if envStr != "{}" && envStr != existing.Env {
-		return true
+	if entry.GitBranch != "" && entry.GitBranch != existing.GitBranch {
+		fields = append(fields, "git_branch")
 	}
-	if len(entry.Secrets) > 0 || len(entry.SecretEnvironmentVariables) > 0 {
-		return true // secret values not returned by API, always re-apply
+	resolvedKeyID := r.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
+	if resolvedKeyID != 0 && resolvedKeyID != existing.SSHKeyID {
+		fields = append(fields, "ssh_key")
 	}
-	return false
+	return fields
 }
 
 func (r *Reconciler) repoNeedsUpdate(entry RepoEntry, existing *models.Repository) bool {
-	if entry.GitURL != "" && entry.GitURL != existing.GitURL {
-		return true
-	}
-	if entry.GitBranch != "" && entry.GitBranch != existing.GitBranch {
-		return true
-	}
-	resolvedKeyID := r.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
-	if resolvedKeyID != 0 && resolvedKeyID != existing.SSHKeyID {
-		return true
-	}
-	return false
+	return len(r.repoChangedFields(entry, existing)) > 0
 }
 
-func (r *Reconciler) inventoryNeedsUpdate(entry InventoryEntry, existing *models.Inventory) bool {
+func (r *Reconciler) inventoryChangedFields(entry InventoryEntry, existing *models.Inventory) []string {
+	var fields []string
 	if entry.Type != "" && entry.Type != existing.Type {
-		return true
+		fields = append(fields, "type")
 	}
 	if entry.Inventory != "" && entry.Inventory != existing.Inventory {
-		return true
+		fields = append(fields, "inventory")
 	}
-	resolvedKeyID := r.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
-	if resolvedKeyID != 0 && resolvedKeyID != existing.SSHKeyID {
-		return true
+	if id := r.resolveKeyID(entry.SSHKey, entry.SSHKeyID); id != 0 && id != existing.SSHKeyID {
+		fields = append(fields, "ssh_key")
 	}
-	resolvedBecomeKeyID := r.resolveKeyID(entry.BecomeKey, entry.BecomeKeyID)
-	if resolvedBecomeKeyID != 0 && resolvedBecomeKeyID != existing.BecomeKeyID {
-		return true
+	if id := r.resolveKeyID(entry.BecomeKey, entry.BecomeKeyID); id != 0 && id != existing.BecomeKeyID {
+		fields = append(fields, "become_key")
 	}
-	resolvedRepoID := r.resolveRepoID(entry.Repository, entry.RepositoryID)
-	if resolvedRepoID != 0 && resolvedRepoID != existing.RepositoryID {
-		return true
+	if id := r.resolveRepoID(entry.Repository, entry.RepositoryID); id != 0 && id != existing.RepositoryID {
+		fields = append(fields, "repository")
 	}
-	return false
+	return fields
+}
+
+func (r *Reconciler) templateChangedFields(entry TemplateEntry, existing *models.Template) []string {
+	var fields []string
+	strChanges := []struct {
+		name          string
+		entryVal, cur string
+	}{
+		{"type", entry.Type, existing.Type},
+		{"app", entry.App, existing.App},
+		{"playbook", entry.Playbook, existing.Playbook},
+		{"description", entry.Description, existing.Description},
+		{"git_branch", entry.GitBranch, existing.GitBranch},
+		{"arguments", entry.Arguments, existing.Arguments},
+		{"start_version", entry.StartVersion, existing.StartVersion},
+	}
+	for _, c := range strChanges {
+		if c.entryVal != "" && c.entryVal != c.cur {
+			fields = append(fields, c.name)
+		}
+	}
+	boolChanges := []struct {
+		name     string
+		entryVal *bool
+		cur      bool
+	}{
+		{"autorun", entry.Autorun, existing.Autorun},
+		{"suppress_success_alerts", entry.SuppressSuccessAlerts, existing.SuppressSuccessAlerts},
+		{"allow_override_args_in_task", entry.AllowOverrideArgsInTask, existing.AllowOverrideArgsInTask},
+	}
+	for _, c := range boolChanges {
+		if c.entryVal != nil && *c.entryVal != c.cur {
+			fields = append(fields, c.name)
+		}
+	}
+	if id := r.resolveRepoID(entry.Repository, entry.RepositoryID); id != 0 && id != existing.RepositoryID {
+		fields = append(fields, "repository")
+	}
+	if id := r.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID); id != 0 && id != existing.EnvironmentID {
+		fields = append(fields, "variable_group")
+	}
+	if id := r.resolveInventoryID(entry.Inventory, entry.InventoryID); id != 0 && id != existing.InventoryID {
+		fields = append(fields, "inventory")
+	}
+	if id := r.resolveTemplateID(entry.BuildTemplate, entry.BuildTemplateID); id != 0 && id != existing.BuildTemplateID {
+		fields = append(fields, "build_template")
+	}
+	if entry.ViewID != 0 && entry.ViewID != existing.ViewID {
+		fields = append(fields, "view_id")
+	}
+	return fields
 }
 
 func (r *Reconciler) templateNeedsUpdate(entry TemplateEntry, existing *models.Template) bool {
-	if entry.Type != "" && entry.Type != existing.Type {
-		return true
-	}
-	if entry.App != "" && entry.App != existing.App {
-		return true
-	}
-	if entry.Playbook != "" && entry.Playbook != existing.Playbook {
-		return true
-	}
-	if entry.Description != "" && entry.Description != existing.Description {
-		return true
-	}
-	if entry.GitBranch != "" && entry.GitBranch != existing.GitBranch {
-		return true
-	}
-	if entry.Arguments != "" && entry.Arguments != existing.Arguments {
-		return true
-	}
-	if entry.StartVersion != "" && entry.StartVersion != existing.StartVersion {
-		return true
-	}
-	if entry.Autorun != nil && *entry.Autorun != existing.Autorun {
-		return true
-	}
-	if entry.SuppressSuccessAlerts != nil && *entry.SuppressSuccessAlerts != existing.SuppressSuccessAlerts {
-		return true
-	}
-	if entry.AllowOverrideArgsInTask != nil && *entry.AllowOverrideArgsInTask != existing.AllowOverrideArgsInTask {
-		return true
-	}
-
-	resolvedRepoID := r.resolveRepoID(entry.Repository, entry.RepositoryID)
-	if resolvedRepoID != 0 && resolvedRepoID != existing.RepositoryID {
-		return true
-	}
-	resolvedEnvID := r.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID)
-	if resolvedEnvID != 0 && resolvedEnvID != existing.EnvironmentID {
-		return true
-	}
-	resolvedInvID := r.resolveInventoryID(entry.Inventory, entry.InventoryID)
-	if resolvedInvID != 0 && resolvedInvID != existing.InventoryID {
-		return true
-	}
-	resolvedBuildTplID := r.resolveTemplateID(entry.BuildTemplate, entry.BuildTemplateID)
-	if resolvedBuildTplID != 0 && resolvedBuildTplID != existing.BuildTemplateID {
-		return true
-	}
-	if entry.ViewID != 0 && entry.ViewID != existing.ViewID {
-		return true
-	}
-
-	return false
+	return len(r.templateChangedFields(entry, existing)) > 0
 }
 
-// scheduleNeedsUpdate returns true if any specified schedule field differs
-// from the existing server-side schedule.
-func (r *Reconciler) scheduleNeedsUpdate(entry ScheduleEntry, existing *models.Schedule) bool {
+// scheduleChangedFields returns the specified schedule fields that differ
+// from the server-side schedule.
+func (r *Reconciler) scheduleChangedFields(entry ScheduleEntry, existing *models.Schedule) []string {
+	var fields []string
 	if entry.CronFormat != "" && entry.CronFormat != existing.CronFormat {
-		return true
+		fields = append(fields, "cron_format")
 	}
-	resolvedTplID := r.resolveTemplateID(entry.Template, entry.TemplateID)
-	if resolvedTplID != 0 && resolvedTplID != existing.TemplateID {
-		return true
+	if id := r.resolveTemplateID(entry.Template, entry.TemplateID); id != 0 && id != existing.TemplateID {
+		fields = append(fields, "template")
 	}
 	if entry.Active != nil && *entry.Active != existing.Active {
-		return true
+		fields = append(fields, "active")
 	}
-	return false
+	return fields
+}
+
+func (r *Reconciler) scheduleNeedsUpdate(entry ScheduleEntry, existing *models.Schedule) bool {
+	return len(r.scheduleChangedFields(entry, existing)) > 0
+}
+
+// validateNameRefs fails the plan when a name reference points at a resource
+// that neither exists server-side nor is defined in this config. Previously
+// such refs silently resolved to ID 0 and created broken resources.
+func (r *Reconciler) validateNameRefs() error {
+	cfgNames := func(names []string) map[string]bool {
+		set := make(map[string]bool, len(names))
+		for _, n := range names {
+			set[strings.ToLower(n)] = true
+		}
+		return set
+	}
+	var keyNames, repoNames, vgNames, invNames, tplNames []string
+	for _, k := range r.config.Keys {
+		if k.State != "absent" {
+			keyNames = append(keyNames, k.Name)
+		}
+	}
+	for _, rp := range r.config.Repositories {
+		if rp.State != "absent" {
+			repoNames = append(repoNames, rp.Name)
+		}
+	}
+	for _, vg := range r.config.VariableGroups {
+		if vg.State != "absent" {
+			vgNames = append(vgNames, vg.Name)
+		}
+	}
+	for _, inv := range r.config.Inventories {
+		if inv.State != "absent" {
+			invNames = append(invNames, inv.Name)
+		}
+	}
+	for _, t := range r.config.Templates {
+		if t.State != "absent" {
+			tplNames = append(tplNames, t.Name)
+		}
+	}
+	cfgKeys, cfgRepos, cfgVGs, cfgInvs, cfgTpls :=
+		cfgNames(keyNames), cfgNames(repoNames), cfgNames(vgNames), cfgNames(invNames), cfgNames(tplNames)
+
+	var errs []string
+	check := func(kind, name, by string, serverMap map[string]int64, inConfig map[string]bool) {
+		if name == "" {
+			return
+		}
+		l := strings.ToLower(name)
+		if _, ok := serverMap[l]; ok {
+			return
+		}
+		if inConfig[l] {
+			return
+		}
+		errs = append(errs, fmt.Sprintf("%s %q (referenced by %s) exists neither on the server nor in this config", kind, name, by))
+	}
+
+	for _, rp := range r.config.Repositories {
+		if rp.State == "absent" {
+			continue
+		}
+		check("key", rp.SSHKey, "repository "+rp.Name, r.KeyIDByName, cfgKeys)
+	}
+	for _, inv := range r.config.Inventories {
+		if inv.State == "absent" {
+			continue
+		}
+		check("key", inv.SSHKey, "inventory "+inv.Name, r.KeyIDByName, cfgKeys)
+		check("key", inv.BecomeKey, "inventory "+inv.Name, r.KeyIDByName, cfgKeys)
+		check("repository", inv.Repository, "inventory "+inv.Name, r.RepoIDByName, cfgRepos)
+	}
+	for _, t := range r.config.Templates {
+		if t.State == "absent" {
+			continue
+		}
+		by := "template " + t.Name
+		check("repository", t.Repository, by, r.RepoIDByName, cfgRepos)
+		check("variable group", t.VariableGroup, by, r.VarGroupIDByName, cfgVGs)
+		check("inventory", t.Inventory, by, r.InventoryIDByName, cfgInvs)
+		check("template", t.BuildTemplate, by, r.TemplateIDByName, cfgTpls)
+	}
+	for _, sc := range r.config.Schedules {
+		if sc.State == "absent" {
+			continue
+		}
+		check("template", sc.Template, "schedule "+sc.Name, r.TemplateIDByName, cfgTpls)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("unresolved references:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
+}
+
+// mustResolve errors when a name reference failed to resolve to an ID at
+// execution time (e.g. its creation failed earlier in this run) instead of
+// letting a zero ID create a broken resource.
+func mustResolve(kind, name string, id int64) (int64, error) {
+	if name != "" && id == 0 {
+		return 0, fmt.Errorf("%s %q did not resolve to an ID — its creation may have failed earlier in this run", kind, name)
+	}
+	return id, nil
 }
 
 // Cross-ref resolution helpers

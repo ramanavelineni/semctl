@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	httptransport "github.com/go-openapi/runtime/client"
@@ -479,20 +480,92 @@ func TestExecute_PartialFailureContinues(t *testing.T) {
 	}
 
 	exec := NewExecutor(f.client(), cfg, recon)
-	if errs := exec.Execute(plan); errs != 1 {
-		t.Fatalf("Execute errors = %d, want exactly 1 (the key)", errs)
+	// Two errors: the failed key create, and the dependent repo whose name
+	// ref can no longer resolve (mustResolve guard — no more silent ID 0).
+	if errs := exec.Execute(plan); errs != 2 {
+		t.Fatalf("Execute errors = %d, want 2 (key + dependent repo)", errs)
 	}
 
-	// Execution continues past the failure...
+	// Independent resources still execute...
 	if !f.sawRequest("POST /api/project/101/environment") {
 		t.Error("variable group was not attempted after key failure")
 	}
-	// ...and documents the known sharp edge (ROADMAP §4.2): the dependent
-	// repo is still created, with the unresolved key ref silently zero.
-	var repoReq models.RepositoryRequest
-	f.lastBody(t, "POST /api/project/101/repositories", &repoReq)
-	if repoReq.SSHKeyID != 0 {
-		t.Errorf("repo ssh_key_id = %d; the dangling-ref behavior changed — update this test and ROADMAP §4.2", repoReq.SSHKeyID)
+	// ...but the dependent repo must NOT be created with a dangling ref.
+	if f.sawRequest("POST /api/project/101/repositories") {
+		t.Error("repo was created despite its key ref failing to resolve")
+	}
+}
+
+func TestExecute_FailFastStopsAtFirstError(t *testing.T) {
+	f := newFakeSemaphore(t)
+	f.failOn["POST /api/project/101/keys"] = http.StatusInternalServerError
+
+	cfg := &ApplyConfig{
+		Project:        "newproj",
+		Keys:           []KeyEntry{{Name: "k1", Type: "ssh", SSH: &SSHKeyData{PrivateKey: "m"}}},
+		VariableGroups: []VariableGroupEntry{{Name: "vg1", Variables: map[string]string{"a": "1"}}},
+	}
+
+	recon := NewReconciler(f.client(), cfg)
+	plan, err := recon.BuildPlan()
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+
+	exec := NewExecutor(f.client(), cfg, recon)
+	exec.SetFailFast(true)
+	if errs := exec.Execute(plan); errs != 1 {
+		t.Fatalf("Execute errors = %d, want 1", errs)
+	}
+	if f.sawRequest("POST /api/project/101/environment") {
+		t.Error("--fail-fast must stop before the variable group")
+	}
+}
+
+func TestBuildPlan_UnresolvedNameRefFailsPlan(t *testing.T) {
+	f := newFakeSemaphore(t)
+
+	cfg := &ApplyConfig{
+		Project:      "newproj",
+		Keys:         []KeyEntry{{Name: "real-key", Type: "ssh", SSH: &SSHKeyData{PrivateKey: "m"}}},
+		Repositories: []RepoEntry{{Name: "r1", GitURL: "https://git/x.git", SSHKey: "real-kye"}}, // typo
+	}
+
+	recon := NewReconciler(f.client(), cfg)
+	_, err := recon.BuildPlan()
+	if err == nil {
+		t.Fatal("BuildPlan should fail on a typo'd name ref")
+	}
+	for _, want := range []string{`key "real-kye"`, "repository r1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err.Error(), want)
+		}
+	}
+}
+
+func TestBuildPlan_UpdateDescriptionListsChangedFields(t *testing.T) {
+	f := newFakeSemaphore(t)
+	f.projects = []*models.Project{{ID: 1, Name: "proj"}}
+	f.templates = []*models.Template{{ID: 7, Name: "Deploy", App: "ansible", Playbook: "a.yml"}}
+
+	cfg := &ApplyConfig{
+		Project:   "proj",
+		Templates: []TemplateEntry{{Name: "Deploy", Playbook: "b.yml", Description: "new"}},
+	}
+
+	recon := NewReconciler(f.client(), cfg)
+	plan, err := recon.BuildPlan()
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	a := findAction(t, plan, ResourceTemplate, "Deploy")
+	if a.Action != ActionUpdate {
+		t.Fatalf("action = %s, want update", a.Action)
+	}
+	for _, want := range []string{"playbook", "description"} {
+		if !strings.Contains(a.Description, want) {
+			t.Errorf("description %q missing %q", a.Description, want)
+		}
 	}
 }
 

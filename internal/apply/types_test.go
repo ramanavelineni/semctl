@@ -491,3 +491,25 @@ func TestParseFile_EnvExpansionInMaps(t *testing.T) {
 		t.Errorf("map key not expanded: %v", vars)
 	}
 }
+
+func TestParseFile_RejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yaml")
+	// The classic typo that used to silently drop all secret env vars.
+	content := "project: p\nvariable_groups:\n  - group_name: vg\n    enviroment_variables:\n      A: b\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ParseFile(path)
+	if err == nil || !strings.Contains(err.Error(), "enviroment_variables") {
+		t.Errorf("want unknown-field error naming the typo, got: %v", err)
+	}
+
+	jsonPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(jsonPath, []byte(`{"project":"p","bogus":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseFile(jsonPath); err == nil {
+		t.Error("want unknown-field error for JSON too")
+	}
+}
