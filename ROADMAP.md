@@ -101,7 +101,9 @@ shipped on feat/cicd-friendliness. Remaining items:
 
 Generic command helpers shipped on refactor/generic-cmd-helpers: `runList`/`runShow`/
 `runDelete` + `parseIDArg` in `cmd/resource_helpers.go`, all 27 list/show/delete commands
-migrated (~360 lines removed). New resource commands (§5–§8) must use them. Remaining:
+migrated (~360 lines removed). httptest coverage for the apply executor/reconciler
+shipped on test/apply-httptest (fake in-memory Semaphore server; apply package 29%→65%).
+Remaining:
 
 - **4.1 Shared `TemplateRequest` builder.** Request building is triplicated
   (`cmd/template_create.go`, `cmd/template_update.go`, twice in
@@ -134,12 +136,7 @@ migrated (~360 lines removed). New resource commands (§5–§8) must use them. 
   Runner/user-options commands 404 raw on older servers, and a schedules-list 404 aborts an
   entire apply plan even for configs without schedules. Fetch it once per session (`semctl info` /
   `Operations.GetInfo` now exist), warn on mismatch, degrade gracefully.
-- **4.6 httptest coverage for executor/reconciler.** `internal/apply/executor.go` has zero
-  test coverage and reconcile's API paths are untested — the riskiest code rides on manual
-  container smoke tests. Point the go-swagger transport at an `httptest.Server` with canned
-  Semaphore JSON; exercises real request bodies (would have caught the SurveyVars-wipe bug
-  class). Cheaper than introducing client interfaces.
-- **4.7 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
+- **4.6 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
   and let `RunE` propagate.
 
 ---
@@ -161,6 +158,5 @@ Still pending:
 
 ## Suggested Order
 
-1. **§4.6 httptest coverage** alongside any apply work (§4.2).
-2. **§4.5 server version awareness** (cheap now that `semctl info` exists).
-3. The rest of §1/§2/§3/§5 opportunistically.
+1. **§4.5 server version awareness** (cheap now that `semctl info` exists).
+2. The rest of §1/§2/§3/§4/§5 opportunistically.
