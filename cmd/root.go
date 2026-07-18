@@ -101,6 +101,7 @@ Exit codes:
 // Execute runs the root command.
 func Execute() {
 	enforceSubcommands(rootCmd)
+	registerDynamicCompletions()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(exitCodeFor(err))
 	}
