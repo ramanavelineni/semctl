@@ -63,6 +63,7 @@ var envUpdateCmd = &cobra.Command{
 			if !ok {
 				return fmt.Errorf("invalid argument %q — expected field=value", arg)
 			}
+			key = strings.ReplaceAll(key, "-", "_") // accept kebab-case like the create flags
 			switch key {
 			case "name":
 				req.Name = value

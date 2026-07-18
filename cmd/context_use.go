@@ -9,7 +9,7 @@ import (
 )
 
 var contextUseCmd = &cobra.Command{
-	Use:     "use [name]",
+	Use:     "use <name>",
 	Short:   "Switch to a different context",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl context use production",

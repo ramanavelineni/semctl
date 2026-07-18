@@ -490,9 +490,8 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			InventoryID:             invID,
 			BuildTemplateID:         buildTplID,
 			ViewID:                  entry.ViewID,
-			SurveyVars:              []*models.TemplateSurveyVar{},
-			Vaults:                  []*models.TemplateVault{},
 		}
+		PreserveUnmanagedTemplateFields(req, nil)
 
 		params := template.NewPostProjectProjectIDTemplatesParams()
 		params.ProjectID = pid
@@ -527,9 +526,8 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			InventoryID:             invID,
 			BuildTemplateID:         buildTplID,
 			ViewID:                  entry.ViewID,
-			SurveyVars:              []*models.TemplateSurveyVar{},
-			Vaults:                  []*models.TemplateVault{},
 		}
+		PreserveUnmanagedTemplateFields(req, e.recon.ExistingTemplateByID[action.ExistingID])
 		if existing := e.recon.ExistingTemplateByID[action.ExistingID]; existing != nil {
 			req.Type = mergeStr(entry.Type, existing.Type)
 			req.App = mergeStr(entry.App, existing.App)
@@ -546,17 +544,6 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 			req.InventoryID = mergeID(invID, existing.InventoryID)
 			req.BuildTemplateID = mergeID(buildTplID, existing.BuildTemplateID)
 			req.ViewID = mergeID(entry.ViewID, existing.ViewID)
-			// Survey vars, vaults, multi-variable-group assignments, and task
-			// params are not managed by apply configs yet — preserve whatever
-			// is configured server-side instead of wiping it.
-			if existing.SurveyVars != nil {
-				req.SurveyVars = existing.SurveyVars
-			}
-			if existing.Vaults != nil {
-				req.Vaults = existing.Vaults
-			}
-			req.EnvironmentIds = existing.EnvironmentIds
-			req.TaskParams = existing.TaskParams
 		}
 
 		params := template.NewPutProjectProjectIDTemplatesTemplateIDParams()

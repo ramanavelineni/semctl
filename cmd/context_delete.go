@@ -11,7 +11,7 @@ import (
 )
 
 var contextDeleteCmd = &cobra.Command{
-	Use:     "delete [name]",
+	Use:     "delete <name>",
 	Aliases: []string{"rm"},
 	Short:   "Delete a context",
 	Args:    cobra.ExactArgs(1),

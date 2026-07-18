@@ -13,18 +13,30 @@ import (
 )
 
 var projectUpdateCmd = &cobra.Command{
-	Use:   "update [field=value...]",
+	Use:   "update [id] [field=value...]",
 	Short: "Update a project",
-	Long:  `Update a project. Uses --project flag or config default for project ID. Fields: name, type, alert, alert_chat, max_parallel_tasks.`,
-	Example: `  semctl project update name="New Name"
+	Long:  `Update a project. The target comes from the optional leading ID, the --project flag, or the config default. Fields: name, type, alert, alert_chat, max_parallel_tasks.`,
+	Example: `  semctl project update 1 name="New Name"
   semctl project update -p 1 alert=true alert_chat="#ops"
   semctl project update max_parallel_tasks=5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid, err := getProjectID(cmd)
-		if err != nil {
-			return err
+		// Accept an optional leading ID for symmetry with every other
+		// update command ("template update 5 ..." vs "project update ...").
+		var id int64
+		if len(args) > 0 && !strings.Contains(args[0], "=") {
+			n, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid argument %q — expected a project ID or field=value", args[0])
+			}
+			id = n
+			args = args[1:]
+		} else {
+			pid, err := getProjectID(cmd)
+			if err != nil {
+				return err
+			}
+			id = int64(pid)
 		}
-		id := int64(pid)
 
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
@@ -59,6 +71,7 @@ var projectUpdateCmd = &cobra.Command{
 			if !ok {
 				return fmt.Errorf("invalid argument %q — expected field=value", arg)
 			}
+			key = strings.ReplaceAll(key, "-", "_") // accept kebab-case like the create flags
 			switch key {
 			case "name":
 				req.Name = value

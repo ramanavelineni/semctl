@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ramanavelineni/semctl/internal/apply"
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
@@ -66,17 +67,8 @@ var templateUpdateCmd = &cobra.Command{
 			AllowOverrideArgsInTask: t.AllowOverrideArgsInTask,
 			StartVersion:            t.StartVersion,
 			Arguments:               t.Arguments,
-			EnvironmentIds:          t.EnvironmentIds,
-			TaskParams:              t.TaskParams,
-			SurveyVars:              t.SurveyVars,
-			Vaults:                  t.Vaults,
 		}
-		if req.SurveyVars == nil {
-			req.SurveyVars = []*models.TemplateSurveyVar{}
-		}
-		if req.Vaults == nil {
-			req.Vaults = []*models.TemplateVault{}
-		}
+		apply.PreserveUnmanagedTemplateFields(req, t)
 
 		if len(args) < 2 {
 			return fmt.Errorf("no fields to update — provide field=value pairs")
@@ -87,6 +79,7 @@ var templateUpdateCmd = &cobra.Command{
 			if !ok {
 				return fmt.Errorf("invalid argument %q — expected field=value", arg)
 			}
+			key = strings.ReplaceAll(key, "-", "_") // accept kebab-case like the create flags
 			switch key {
 			case "name":
 				req.Name = value

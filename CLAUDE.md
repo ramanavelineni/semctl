@@ -61,7 +61,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Updates MERGE over existing state (`mergeStr`/`mergeID`/`mergeBool` + `Reconciler.Existing*ByID` maps): empty config field = keep server value; template bools are `*bool` (nil = keep); SurveyVars/Vaults preserved from existing on update
 - Validate rejects the literal `<set-me>` export placeholder (`ExportPlaceholder`)
 - Schedules reconcile by name like other resources (duplicate names possible server-side: first match is managed, `state: absent` deletes ALL matches); `--skip-schedules` leaves them unmanaged
-- Template updates must preserve fields apply doesn't manage: SurveyVars, Vaults, EnvironmentIds, TaskParams — copy from the existing template or the server wipes them
+- Template updates must preserve fields apply doesn't manage (SurveyVars, Vaults, EnvironmentIds, TaskParams) — every TemplateRequest builder MUST call `apply.PreserveUnmanagedTemplateFields(req, existing)` (nil existing = fresh create); hand-rolling the copy is how the wipe bug happened twice
 - Schema reference: `docs/apply-schema.md`
 
 ## Build
