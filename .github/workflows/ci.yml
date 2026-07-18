@@ -19,7 +19,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           # Pinned so a new linter release can't break unrelated PRs.
           # Keep in sync with the local dev install; bump deliberately.

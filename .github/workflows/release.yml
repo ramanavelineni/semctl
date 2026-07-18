@@ -20,7 +20,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           # Same pin as ci.yml — a lint-failing tag must not release.
           version: v2.10.1
