@@ -41,10 +41,8 @@ shipped on feat/cicd-friendliness. Remaining items:
   server-side API token that is never revoked; on a read-only filesystem the ignored cache
   write (`client.go:146-150`) means every command mints another. Document
   `SEMCTL_API_TOKEN` as the CI path; consider revoking ephemeral tokens at exit.
-- **2.3 Own CI hardening** (`.github/workflows/`): `go test -race -cover`, govulncheck,
-  dependabot, pin golangci-lint version (currently `latest`), cross-compile darwin/windows
-  in CI (`goreleaser build --snapshot`), gate release.yml on lint too. goreleaser: consider
-  homebrew tap / docker image / SBOM+signing if distributing publicly.
+- **2.3 Distribution extras.** goreleaser: consider a homebrew tap, docker image, and
+  SBOM/artifact signing if distributing publicly.
 
 ---
 
