@@ -379,3 +379,22 @@ func TestResolveIDHelpers(t *testing.T) {
 		t.Errorf("resolveTemplateID = %d, want 25", id)
 	}
 }
+
+func TestJSONVarsEqual(t *testing.T) {
+	// Key order and whitespace must not produce phantom updates.
+	if !jsonVarsEqual(map[string]string{"a": "1", "b": "2"}, `{"b": "2", "a": "1"}`) {
+		t.Error("order-insensitive equality failed")
+	}
+	if jsonVarsEqual(map[string]string{"a": "1"}, `{"a":"2"}`) {
+		t.Error("value mismatch not detected")
+	}
+	if jsonVarsEqual(map[string]string{"a": "1"}, `{"a":1}`) {
+		t.Error("non-string server value should count as different")
+	}
+	if jsonVarsEqual(map[string]string{"a": "1"}, `not-json`) {
+		t.Error("unparseable server JSON should count as different")
+	}
+	if jsonVarsEqual(map[string]string{"a": "1", "b": "2"}, `{"a":"1"}`) {
+		t.Error("missing key not detected")
+	}
+}

@@ -1,8 +1,11 @@
 package apply
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -256,11 +259,17 @@ func parseFileLenient(path string) (*ApplyConfig, []string, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
+		// Strict field checking: a typo like "enviroment_variables:" used
+		// to be dropped silently, meaning secrets never got applied.
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 			return nil, nil, fmt.Errorf("parsing YAML: %w", err)
 		}
 	case ".json":
-		if err := json.Unmarshal(data, &cfg); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg); err != nil {
 			return nil, nil, fmt.Errorf("parsing JSON: %w", err)
 		}
 	default:

@@ -40,6 +40,7 @@ Bare $WORD text (no braces) is left untouched.`,
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		skipSchedules, _ := cmd.Flags().GetBool("skip-schedules")
 		detailedExit, _ := cmd.Flags().GetBool("detailed-exitcode")
+		failFast, _ := cmd.Flags().GetBool("fail-fast")
 
 		if len(filePaths) == 0 {
 			return fmt.Errorf("--file (-f) is required")
@@ -114,6 +115,7 @@ Bare $WORD text (no braces) is left untouched.`,
 			}
 
 			executor := apply.NewExecutor(apiClient, cfg, recon)
+			executor.SetFailFast(failFast)
 			errorCount := executor.Execute(plan)
 			totalErrors += errorCount
 
@@ -159,4 +161,5 @@ func init() {
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
 	applyCmd.Flags().Bool("skip-schedules", false, "leave schedule resources unmanaged by this apply")
 	applyCmd.Flags().Bool("detailed-exitcode", false, "exit 2 when the plan has changes, 0 when in sync (1 = error); combine with --dry-run for drift gates")
+	applyCmd.Flags().Bool("fail-fast", false, "stop at the first error instead of continuing with remaining actions")
 }

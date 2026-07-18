@@ -18,9 +18,16 @@ import (
 
 // Executor applies planned changes to Semaphore.
 type Executor struct {
-	client *apiclient.Semapi
-	config *ApplyConfig
-	recon  *Reconciler
+	client   *apiclient.Semapi
+	config   *ApplyConfig
+	recon    *Reconciler
+	failFast bool
+}
+
+// SetFailFast makes Execute stop at the first error instead of continuing
+// with the remaining actions.
+func (e *Executor) SetFailFast(v bool) {
+	e.failFast = v
 }
 
 // NewExecutor creates a new executor.
@@ -53,6 +60,10 @@ func (e *Executor) Execute(plan *Plan) int {
 				if err := e.executeAction(action); err != nil {
 					style.Error(fmt.Sprintf("Failed to %s %s %q: %v", action.Action, action.Type, action.Label, err))
 					errors++
+					if e.failFast {
+						style.Warning("Stopping at first error (--fail-fast); re-running apply resumes reconciliation.")
+						return errors
+					}
 				}
 			}
 		}
@@ -75,6 +86,10 @@ func (e *Executor) Execute(plan *Plan) int {
 				if err := e.executeAction(action); err != nil {
 					style.Error(fmt.Sprintf("Failed to delete %s %q: %v", action.Type, action.Label, err))
 					errors++
+					if e.failFast {
+						style.Warning("Stopping at first error (--fail-fast); re-running apply resumes reconciliation.")
+						return errors
+					}
 				}
 			}
 		}
@@ -313,7 +328,10 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 	}
 
 	entry := e.config.Repositories[action.Index]
-	sshKeyID := e.recon.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
+	sshKeyID, err := mustResolve("key", entry.SSHKey, e.recon.resolveKeyID(entry.SSHKey, entry.SSHKeyID))
+	if err != nil {
+		return err
+	}
 
 	switch action.Action {
 	case ActionCreate:
@@ -386,9 +404,18 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 	}
 
 	entry := e.config.Inventories[action.Index]
-	sshKeyID := e.recon.resolveKeyID(entry.SSHKey, entry.SSHKeyID)
-	becomeKeyID := e.recon.resolveKeyID(entry.BecomeKey, entry.BecomeKeyID)
-	repoID := e.recon.resolveRepoID(entry.Repository, entry.RepositoryID)
+	sshKeyID, err := mustResolve("key", entry.SSHKey, e.recon.resolveKeyID(entry.SSHKey, entry.SSHKeyID))
+	if err != nil {
+		return err
+	}
+	becomeKeyID, err := mustResolve("key", entry.BecomeKey, e.recon.resolveKeyID(entry.BecomeKey, entry.BecomeKeyID))
+	if err != nil {
+		return err
+	}
+	repoID, err := mustResolve("repository", entry.Repository, e.recon.resolveRepoID(entry.Repository, entry.RepositoryID))
+	if err != nil {
+		return err
+	}
 
 	switch action.Action {
 	case ActionCreate:
@@ -465,10 +492,22 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 	}
 
 	entry := e.config.Templates[action.Index]
-	repoID := e.recon.resolveRepoID(entry.Repository, entry.RepositoryID)
-	envID := e.recon.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID)
-	invID := e.recon.resolveInventoryID(entry.Inventory, entry.InventoryID)
-	buildTplID := e.recon.resolveTemplateID(entry.BuildTemplate, entry.BuildTemplateID)
+	repoID, err := mustResolve("repository", entry.Repository, e.recon.resolveRepoID(entry.Repository, entry.RepositoryID))
+	if err != nil {
+		return err
+	}
+	envID, err := mustResolve("variable group", entry.VariableGroup, e.recon.resolveVarGroupID(entry.VariableGroup, entry.EnvironmentID))
+	if err != nil {
+		return err
+	}
+	invID, err := mustResolve("inventory", entry.Inventory, e.recon.resolveInventoryID(entry.Inventory, entry.InventoryID))
+	if err != nil {
+		return err
+	}
+	buildTplID, err := mustResolve("template", entry.BuildTemplate, e.recon.resolveTemplateID(entry.BuildTemplate, entry.BuildTemplateID))
+	if err != nil {
+		return err
+	}
 
 	switch action.Action {
 	case ActionCreate:
@@ -577,7 +616,10 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 	}
 
 	entry := e.config.Schedules[action.Index]
-	tplID := e.recon.resolveTemplateID(entry.Template, entry.TemplateID)
+	tplID, err := mustResolve("template", entry.Template, e.recon.resolveTemplateID(entry.Template, entry.TemplateID))
+	if err != nil {
+		return err
+	}
 
 	active := true
 	if entry.Active != nil {

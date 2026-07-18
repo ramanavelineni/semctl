@@ -21,6 +21,8 @@ Rules:
 - Only the braced `${VAR_NAME}` form is expanded. Bare `$WORD` text (common in Ansible arguments, cron entries, and passwords) is left untouched.
 - Referencing a variable that is **not set** is an error in `semctl apply` — values are never silently replaced with empty strings. `semctl validate` treats unset variables as empty but prints a warning, so config files can be validated offline without secrets present.
 - To produce a literal `${VAR_NAME}` in a value, escape it as `$${VAR_NAME}`.
+- Unknown keys are a **parse error** (strict field checking) — a typo like `enviroment_variables:` fails loudly instead of being dropped silently.
+- Updates **merge over** existing state: an empty/omitted field keeps the server-side value. Consequently apply cannot *unset* a field (e.g. clear a template description or detach an ssh key) — do that in the UI or with `semctl <resource> update`.
 - Expansion happens **after parsing** and only inside string values, so an environment value can never change the document structure (a value containing YAML syntax stays an inert string). Consequently, `${VAR}` cannot be used for numeric fields like `ssh_key_id` — use the name-reference fields (`ssh_key: "${KEY_NAME}"`) instead.
 
 ---
