@@ -20,8 +20,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          # Same pin as ci.yml — a lint-failing tag must not release.
+          version: v2.10.1
+
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
       - uses: goreleaser/goreleaser-action@v6
         with:

@@ -2,6 +2,8 @@ module github.com/ramanavelineni/semctl
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/huh v0.8.0

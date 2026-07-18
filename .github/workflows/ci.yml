@@ -21,7 +21,9 @@ jobs:
 
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          # Pinned so a new linter release can't break unrelated PRs.
+          # Keep in sync with the local dev install; bump deliberately.
+          version: v2.10.1
 
   test:
     runs-on: ubuntu-latest
@@ -45,7 +47,29 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -race -cover ./...
 
       - name: Build
         run: go build ./...
+
+      - name: Cross-compile release targets
+        # Darwin/Windows binaries otherwise go uncompiled until release day.
+        run: |
+          for target in darwin/amd64 darwin/arm64 windows/amd64 linux/arm64; do
+            echo "building $target"
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build ./... || exit 1
+          done
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
