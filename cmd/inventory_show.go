@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/inventory"
+	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
 )
 
@@ -16,50 +15,41 @@ var inventoryShowCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl inventory show 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := parseIDArg(args[0], "inventory")
 		if err != nil {
-			return fmt.Errorf("invalid inventory ID: %w", err)
+			return err
 		}
-
 		pid, err := getProjectID(cmd)
 		if err != nil {
 			return err
 		}
-
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err
 		}
 
-		params := inventory.NewGetProjectProjectIDInventoryInventoryIDParams()
-		params.ProjectID = int64(pid)
-		params.InventoryID = id
-
-		resp, err := apiClient.Inventory.GetProjectProjectIDInventoryInventoryID(params, nil)
-		if err != nil {
-			return fmt.Errorf("failed to get inventory: %w", err)
-		}
-
-		inv := resp.GetPayload()
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(inv, nil, nil)
-			return nil
-		}
-
-		headers := []string{"Field", "Value"}
-		rows := [][]string{
-			{"ID", strconv.FormatInt(inv.ID, 10)},
-			{"Name", inv.Name},
-			{"Type", inv.Type},
-			{"SSH Key ID", strconv.FormatInt(inv.SSHKeyID, 10)},
-			{"Become Key ID", strconv.FormatInt(inv.BecomeKeyID, 10)},
-			{"Repository ID", strconv.FormatInt(inv.RepositoryID, 10)},
-			{"Inventory", inv.Inventory},
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
+		return runShow("inventory",
+			func() (*models.Inventory, error) {
+				params := inventory.NewGetProjectProjectIDInventoryInventoryIDParams()
+				params.ProjectID = int64(pid)
+				params.InventoryID = id
+				resp, err := apiClient.Inventory.GetProjectProjectIDInventoryInventoryID(params, nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(inv *models.Inventory) [][]string {
+				return [][]string{
+					{"ID", strconv.FormatInt(inv.ID, 10)},
+					{"Name", inv.Name},
+					{"Type", inv.Type},
+					{"SSH Key ID", strconv.FormatInt(inv.SSHKeyID, 10)},
+					{"Become Key ID", strconv.FormatInt(inv.BecomeKeyID, 10)},
+					{"Repository ID", strconv.FormatInt(inv.RepositoryID, 10)},
+					{"Inventory", inv.Inventory},
+				}
+			})
 	},
 }
 

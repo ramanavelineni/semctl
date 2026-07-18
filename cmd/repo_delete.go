@@ -1,11 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strconv"
-
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
 	"github.com/spf13/cobra"
 )
@@ -17,36 +13,26 @@ var repoDeleteCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl repo delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := parseIDArg(args[0], "repository")
 		if err != nil {
-			return fmt.Errorf("invalid repository ID: %w", err)
+			return err
 		}
-
 		pid, err := getProjectID(cmd)
 		if err != nil {
 			return err
 		}
 
-		if err := confirmAction(cmd, fmt.Sprintf("Delete repository %d?", id)); err != nil {
+		return runDelete(cmd, "repository", id, func() error {
+			apiClient, err := client.NewAuthenticatedClient()
+			if err != nil {
+				return err
+			}
+			params := repository.NewDeleteProjectProjectIDRepositoriesRepositoryIDParams()
+			params.ProjectID = int64(pid)
+			params.RepositoryID = id
+			_, err = apiClient.Repository.DeleteProjectProjectIDRepositoriesRepositoryID(params, nil)
 			return err
-		}
-
-		apiClient, err := client.NewAuthenticatedClient()
-		if err != nil {
-			return err
-		}
-
-		params := repository.NewDeleteProjectProjectIDRepositoriesRepositoryIDParams()
-		params.ProjectID = int64(pid)
-		params.RepositoryID = id
-
-		_, err = apiClient.Repository.DeleteProjectProjectIDRepositoriesRepositoryID(params, nil)
-		if err != nil {
-			return fmt.Errorf("failed to delete repository: %w", err)
-		}
-
-		style.Success(fmt.Sprintf("Deleted repository %d", id))
-		return nil
+		})
 	},
 }
 

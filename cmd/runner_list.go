@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/runner"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
@@ -23,55 +21,40 @@ var runnerListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err
 		}
 
-		var items []*models.Runner
-		if projectScoped {
-			params := runner.NewGetProjectProjectIDRunnersParams()
-			params.ProjectID = pid
-			resp, err := apiClient.Runner.GetProjectProjectIDRunners(params, nil)
-			if err != nil {
-				return fmt.Errorf("failed to list project runners: %w", err)
-			}
-			items = resp.GetPayload()
-		} else {
-			resp, err := apiClient.Runner.GetRunners(runner.NewGetRunnersParams(), nil)
-			if err != nil {
-				return fmt.Errorf("failed to list runners: %w", err)
-			}
-			items = resp.GetPayload()
-		}
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
-		}
-
-		headers := []string{"ID", "Name", "Active", "Registered", "Default", "Max Parallel", "Tags"}
-		var rows [][]string
-		for _, r := range items {
-			rows = append(rows, []string{
-				strconv.FormatInt(r.ID, 10),
-				r.Name,
-				strconv.FormatBool(r.Active),
-				strconv.FormatBool(r.Registered),
-				strconv.FormatBool(r.IsDefault),
-				strconv.FormatInt(r.MaxParallelTasks, 10),
-				strings.Join(r.Tags, ","),
+		return runList("runners",
+			[]string{"ID", "Name", "Active", "Registered", "Default", "Max Parallel", "Tags"},
+			func() ([]*models.Runner, error) {
+				if projectScoped {
+					params := runner.NewGetProjectProjectIDRunnersParams()
+					params.ProjectID = pid
+					resp, err := apiClient.Runner.GetProjectProjectIDRunners(params, nil)
+					if err != nil {
+						return nil, err
+					}
+					return resp.GetPayload(), nil
+				}
+				resp, err := apiClient.Runner.GetRunners(runner.NewGetRunnersParams(), nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(r *models.Runner) []string {
+				return []string{
+					strconv.FormatInt(r.ID, 10),
+					r.Name,
+					strconv.FormatBool(r.Active),
+					strconv.FormatBool(r.Registered),
+					strconv.FormatBool(r.IsDefault),
+					strconv.FormatInt(r.MaxParallelTasks, 10),
+					strings.Join(r.Tags, ","),
+				}
 			})
-		}
-
-		if len(rows) == 0 {
-			printEmptyList("runners")
-			return nil
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
 	},
 }
 

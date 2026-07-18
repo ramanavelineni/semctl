@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
+	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
 )
 
@@ -20,46 +19,31 @@ var repoListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err
 		}
 
-		params := repository.NewGetProjectProjectIDRepositoriesParams()
-		params.ProjectID = int64(pid)
-
-		resp, err := apiClient.Repository.GetProjectProjectIDRepositories(params, nil)
-		if err != nil {
-			return fmt.Errorf("failed to list repositories: %w", err)
-		}
-
-		items := resp.GetPayload()
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
-		}
-
-		headers := []string{"ID", "Name", "Git URL", "Git Branch", "SSH Key ID"}
-		var rows [][]string
-		for _, r := range items {
-			rows = append(rows, []string{
-				strconv.FormatInt(r.ID, 10),
-				r.Name,
-				r.GitURL,
-				r.GitBranch,
-				strconv.FormatInt(r.SSHKeyID, 10),
+		return runList("repositories",
+			[]string{"ID", "Name", "Git URL", "Git Branch", "SSH Key ID"},
+			func() ([]*models.Repository, error) {
+				params := repository.NewGetProjectProjectIDRepositoriesParams()
+				params.ProjectID = int64(pid)
+				resp, err := apiClient.Repository.GetProjectProjectIDRepositories(params, nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(r *models.Repository) []string {
+				return []string{
+					strconv.FormatInt(r.ID, 10),
+					r.Name,
+					r.GitURL,
+					r.GitBranch,
+					strconv.FormatInt(r.SSHKeyID, 10),
+				}
 			})
-		}
-
-		if len(rows) == 0 {
-			printEmptyList("repositories")
-			return nil
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
 	},
 }
 

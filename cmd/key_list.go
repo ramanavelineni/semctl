@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
+	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
 )
 
@@ -20,44 +19,29 @@ var keyListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err
 		}
 
-		params := key_store.NewGetProjectProjectIDKeysParams()
-		params.ProjectID = int64(pid)
-
-		resp, err := apiClient.KeyStore.GetProjectProjectIDKeys(params, nil)
-		if err != nil {
-			return fmt.Errorf("failed to list keys: %w", err)
-		}
-
-		items := resp.GetPayload()
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
-		}
-
-		headers := []string{"ID", "Name", "Type"}
-		var rows [][]string
-		for _, k := range items {
-			rows = append(rows, []string{
-				strconv.FormatInt(k.ID, 10),
-				k.Name,
-				k.Type,
+		return runList("keys",
+			[]string{"ID", "Name", "Type"},
+			func() ([]*models.AccessKey, error) {
+				params := key_store.NewGetProjectProjectIDKeysParams()
+				params.ProjectID = int64(pid)
+				resp, err := apiClient.KeyStore.GetProjectProjectIDKeys(params, nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(k *models.AccessKey) []string {
+				return []string{
+					strconv.FormatInt(k.ID, 10),
+					k.Name,
+					k.Type,
+				}
 			})
-		}
-
-		if len(rows) == 0 {
-			printEmptyList("keys")
-			return nil
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
 	},
 }
 

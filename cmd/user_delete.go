@@ -1,11 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strconv"
-
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/user"
 	"github.com/spf13/cobra"
 )
@@ -17,29 +13,21 @@ var userDeleteCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl user delete 2",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid user ID: %w", err)
-		}
-
-		if err := confirmAction(cmd, fmt.Sprintf("Delete user %d?", id)); err != nil {
-			return err
-		}
-
-		apiClient, err := client.NewAuthenticatedClient()
+		id, err := parseIDArg(args[0], "user")
 		if err != nil {
 			return err
 		}
 
-		params := user.NewDeleteUsersUserIDParams()
-		params.UserID = id
-
-		if _, err := apiClient.User.DeleteUsersUserID(params, nil); err != nil {
-			return fmt.Errorf("failed to delete user: %w", err)
-		}
-
-		style.Success(fmt.Sprintf("Deleted user %d", id))
-		return nil
+		return runDelete(cmd, "user", id, func() error {
+			apiClient, err := client.NewAuthenticatedClient()
+			if err != nil {
+				return err
+			}
+			params := user.NewDeleteUsersUserIDParams()
+			params.UserID = id
+			_, err = apiClient.User.DeleteUsersUserID(params, nil)
+			return err
+		})
 	},
 }
 

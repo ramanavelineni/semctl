@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/runner"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
@@ -21,50 +19,35 @@ var runnerTagsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err
 		}
 
-		var items []*models.RunnerTag
-		if projectScoped {
-			params := runner.NewGetProjectProjectIDRunnerTagsParams()
-			params.ProjectID = pid
-			resp, err := apiClient.Runner.GetProjectProjectIDRunnerTags(params, nil)
-			if err != nil {
-				return fmt.Errorf("failed to list runner tags: %w", err)
-			}
-			items = resp.GetPayload()
-		} else {
-			resp, err := apiClient.Runner.GetRunnerTags(runner.NewGetRunnerTagsParams(), nil)
-			if err != nil {
-				return fmt.Errorf("failed to list runner tags: %w", err)
-			}
-			items = resp.GetPayload()
-		}
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
-		}
-
-		headers := []string{"Tag", "Runners"}
-		var rows [][]string
-		for _, t := range items {
-			rows = append(rows, []string{
-				t.Tag,
-				strconv.FormatInt(t.NumberOfRunners, 10),
+		return runList("runner tags",
+			[]string{"Tag", "Runners"},
+			func() ([]*models.RunnerTag, error) {
+				if projectScoped {
+					params := runner.NewGetProjectProjectIDRunnerTagsParams()
+					params.ProjectID = pid
+					resp, err := apiClient.Runner.GetProjectProjectIDRunnerTags(params, nil)
+					if err != nil {
+						return nil, err
+					}
+					return resp.GetPayload(), nil
+				}
+				resp, err := apiClient.Runner.GetRunnerTags(runner.NewGetRunnerTagsParams(), nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(t *models.RunnerTag) []string {
+				return []string{
+					t.Tag,
+					strconv.FormatInt(t.NumberOfRunners, 10),
+				}
 			})
-		}
-
-		if len(rows) == 0 {
-			printEmptyList("runner tags")
-			return nil
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
 	},
 }
 
