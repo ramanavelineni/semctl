@@ -99,17 +99,16 @@ shipped on feat/cicd-friendliness. Remaining items:
 
 ## 4. Architecture / Tech Debt
 
-- **4.1 Generic command helpers before new resource commands.** All business logic lives
-  in 74 `RunE` closures; list/show/delete are byte-for-byte the same shape (cmd coverage:
-  12.4%). Two or three generics helpers (`runList`, `runDelete`) would remove ~half of
-  `cmd/` and stop the copy-paste drift that produced the empty-list inconsistency. Do this
-  before adding schedule/token/event commands.
-- **4.2 Shared `TemplateRequest` builder.** Request building is triplicated
+Generic command helpers shipped on refactor/generic-cmd-helpers: `runList`/`runShow`/
+`runDelete` + `parseIDArg` in `cmd/resource_helpers.go`, all 27 list/show/delete commands
+migrated (~360 lines removed). New resource commands (§5–§8) must use them. Remaining:
+
+- **4.1 Shared `TemplateRequest` builder.** Request building is triplicated
   (`cmd/template_create.go`, `cmd/template_update.go`, twice in
   `internal/apply/executor.go`) with two different SurveyVars/Vaults/EnvironmentIds/
   TaskParams preservation mechanisms — the invariant that already bit once. One shared
   builder used by both cmd and executor.
-- **4.3 Apply sharp edges:**
+- **4.2 Apply sharp edges:**
   - Unresolvable name refs return `0` silently (`reconcile.go:842`) — a typo'd
     `ssh_key: my-kye` creates a repo with `SSHKeyID: 0`. Return errors naming the reference.
   - On partial failure the executor attempts dependents of failed creates. Track failed
@@ -122,25 +121,25 @@ shipped on feat/cicd-friendliness. Remaining items:
     causes false-positive updates on key order/whitespace (`reconcile.go:709-722`).
   - Document that merge semantics can't unset a field (empty = keep); consider a
     `field: null` convention if apply should be a full source of truth.
-- **4.4 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
+- **4.3 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
   yaml.v3 writes verbatim — a context named `Prod` lists as `prod` and a save can create a
   duplicate `prod:` key Viper then merges unpredictably. Writes destroy comments and aren't
   atomic (no temp+rename, no lock) — concurrent `login`s can corrupt the file. Env overrides
   are already manual `os.Getenv`, so Viper earns little here. Normalize context names
   (lowercase at the boundary, as apply does) and write atomically.
-- **4.5 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
+- **4.4 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
   anywhere; Ctrl-C kills mid-apply with no resumability note and can't cancel in-flight
   HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
-- **4.6 Server version awareness.** Client targets 2.18.20; no version detection exists.
+- **4.5 Server version awareness.** Client targets 2.18.20; no version detection exists.
   Runner/user-options commands 404 raw on older servers, and a schedules-list 404 aborts an
   entire apply plan even for configs without schedules. Fetch `GET /api/info` once per
   session (see §8), warn on mismatch, degrade gracefully.
-- **4.7 httptest coverage for executor/reconciler.** `internal/apply/executor.go` has zero
+- **4.6 httptest coverage for executor/reconciler.** `internal/apply/executor.go` has zero
   test coverage and reconcile's API paths are untested — the riskiest code rides on manual
   container smoke tests. Point the go-swagger transport at an `httptest.Server` with canned
   Semaphore JSON; exercises real request bodies (would have caught the SurveyVars-wipe bug
   class). Cheaper than introducing client interfaces.
-- **4.8 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
+- **4.7 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
   and let `RunE` propagate.
 
 ---
@@ -225,7 +224,7 @@ Read-only event listing. Global scope. Uses `apiClient.Operations`.
 ## 8. Server Info Command
 
 `cmd/info.go` — `semctl info`, calls `apiClient.Operations.GetInfo`, displays Semaphore
-server version and configuration. Doubles as the fetch point for version awareness (4.6).
+server version and configuration. Doubles as the fetch point for version awareness (4.5).
 
 ---
 
@@ -242,6 +241,6 @@ Still pending:
 
 ## Suggested Order
 
-1. **§4.1 generic helpers**, then **§5–§8 new commands** on top of them.
-2. **§4.7 httptest coverage** alongside any apply work (§4.3).
+1. **§5–§8 new commands** (schedule/token/event/info) on the new helper pattern.
+2. **§4.6 httptest coverage** alongside any apply work (§4.2).
 3. The rest of §1/§2/§3/§4 opportunistically.

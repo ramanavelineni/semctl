@@ -20,6 +20,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Interactive mode: `shouldAutoInteractive(cmd, inputsMissing)` pattern
 - Runner commands are GLOBAL by default; only an explicit `--project` flag selects project scope (`runnerScope(cmd)` — config defaults.project_id deliberately ignored)
 - Update commands use `field=value` positional args pattern: fetch current resource, apply overrides, PUT back
+- List/show/delete commands MUST go through the generics in cmd/resource_helpers.go — `runList(what, headers, fetch, row)`, `runShow(what, fetch, fields)`, `runDelete(cmd, what, id, del)`, `parseIDArg`. The fetch/del closure owns the typed go-swagger params; auth (`client.NewAuthenticatedClient`) happens BEFORE the helper so auth errors stay unwrapped. `what` is plural for lists, singular for show/delete
 - Confirmations use `confirmAction(cmd, prompt)` (cmd/confirm.go): `--yes` skips; non-TTY stdin without `--yes` errors; declining returns `errCancelled` → non-zero exit. Never inline `[y/N]` prompts
 - `task run --wait/--follow` polls status until success/error/stopped; non-success = non-zero exit
 - Exit codes (cmd/exitcodes.go, mapped in `Execute()` via `exitCodeFor`): 1 generic, 2 apply drift (`--detailed-exitcode`), 3 auth (client.ErrNoCredentials/ErrAuthFailed sentinels + 401/403), 4 not-found (404), 5 cancelled (errCancelled), 6 task failed, 7 wait timeout. Attach specific codes with `withExitCode(err, code)`

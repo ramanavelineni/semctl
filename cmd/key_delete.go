@@ -1,11 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strconv"
-
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
 	"github.com/spf13/cobra"
 )
@@ -17,36 +13,26 @@ var keyDeleteCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl key delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := parseIDArg(args[0], "key")
 		if err != nil {
-			return fmt.Errorf("invalid key ID: %w", err)
+			return err
 		}
-
 		pid, err := getProjectID(cmd)
 		if err != nil {
 			return err
 		}
 
-		if err := confirmAction(cmd, fmt.Sprintf("Delete key %d?", id)); err != nil {
+		return runDelete(cmd, "key", id, func() error {
+			apiClient, err := client.NewAuthenticatedClient()
+			if err != nil {
+				return err
+			}
+			params := key_store.NewDeleteProjectProjectIDKeysKeyIDParams()
+			params.ProjectID = int64(pid)
+			params.KeyID = id
+			_, err = apiClient.KeyStore.DeleteProjectProjectIDKeysKeyID(params, nil)
 			return err
-		}
-
-		apiClient, err := client.NewAuthenticatedClient()
-		if err != nil {
-			return err
-		}
-
-		params := key_store.NewDeleteProjectProjectIDKeysKeyIDParams()
-		params.ProjectID = int64(pid)
-		params.KeyID = id
-
-		_, err = apiClient.KeyStore.DeleteProjectProjectIDKeysKeyID(params, nil)
-		if err != nil {
-			return fmt.Errorf("failed to delete key: %w", err)
-		}
-
-		style.Success(fmt.Sprintf("Deleted key %d", id))
-		return nil
+		})
 	},
 }
 

@@ -1,11 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strconv"
-
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
 	"github.com/spf13/cobra"
 )
@@ -17,36 +13,26 @@ var templateDeleteCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl template delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := parseIDArg(args[0], "template")
 		if err != nil {
-			return fmt.Errorf("invalid template ID: %w", err)
+			return err
 		}
-
 		pid, err := getProjectID(cmd)
 		if err != nil {
 			return err
 		}
 
-		if err := confirmAction(cmd, fmt.Sprintf("Delete template %d?", id)); err != nil {
+		return runDelete(cmd, "template", id, func() error {
+			apiClient, err := client.NewAuthenticatedClient()
+			if err != nil {
+				return err
+			}
+			params := template.NewDeleteProjectProjectIDTemplatesTemplateIDParams()
+			params.ProjectID = int64(pid)
+			params.TemplateID = id
+			_, err = apiClient.Template.DeleteProjectProjectIDTemplatesTemplateID(params, nil)
 			return err
-		}
-
-		apiClient, err := client.NewAuthenticatedClient()
-		if err != nil {
-			return err
-		}
-
-		params := template.NewDeleteProjectProjectIDTemplatesTemplateIDParams()
-		params.ProjectID = int64(pid)
-		params.TemplateID = id
-
-		_, err = apiClient.Template.DeleteProjectProjectIDTemplatesTemplateID(params, nil)
-		if err != nil {
-			return fmt.Errorf("failed to delete template: %w", err)
-		}
-
-		style.Success(fmt.Sprintf("Deleted template %d", id))
-		return nil
+		})
 	},
 }
 

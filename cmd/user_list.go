@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/user"
+	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
 )
 
@@ -21,39 +20,26 @@ var userListCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := apiClient.User.GetUsers(user.NewGetUsersParams(), nil)
-		if err != nil {
-			return fmt.Errorf("failed to list users: %w", err)
-		}
-
-		items := resp.GetPayload()
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
-		}
-
-		headers := []string{"ID", "Username", "Name", "Email", "Admin", "External", "Alert"}
-		var rows [][]string
-		for _, u := range items {
-			rows = append(rows, []string{
-				strconv.FormatInt(u.ID, 10),
-				u.Username,
-				u.Name,
-				u.Email,
-				strconv.FormatBool(u.Admin),
-				strconv.FormatBool(u.External),
-				strconv.FormatBool(u.Alert),
+		return runList("users",
+			[]string{"ID", "Username", "Name", "Email", "Admin", "External", "Alert"},
+			func() ([]*models.User, error) {
+				resp, err := apiClient.User.GetUsers(user.NewGetUsersParams(), nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(u *models.User) []string {
+				return []string{
+					strconv.FormatInt(u.ID, 10),
+					u.Username,
+					u.Name,
+					u.Email,
+					strconv.FormatBool(u.Admin),
+					strconv.FormatBool(u.External),
+					strconv.FormatBool(u.Alert),
+				}
 			})
-		}
-
-		if len(rows) == 0 {
-			printEmptyList("users")
-			return nil
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
 	},
 }
 

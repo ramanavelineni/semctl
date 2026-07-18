@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
-	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
+	"github.com/ramanavelineni/semctl/pkg/semapi/models"
 	"github.com/spf13/cobra"
 )
 
@@ -21,37 +20,24 @@ var projectListCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := apiClient.Project.GetProjects(project.NewGetProjectsParams(), nil)
-		if err != nil {
-			return fmt.Errorf("failed to list projects: %w", err)
-		}
-
-		items := resp.GetPayload()
-
-		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
-		}
-
-		headers := []string{"ID", "Name", "Type", "Alert", "Created"}
-		var rows [][]string
-		for _, p := range items {
-			rows = append(rows, []string{
-				strconv.FormatInt(p.ID, 10),
-				p.Name,
-				p.Type,
-				strconv.FormatBool(p.Alert),
-				p.Created,
+		return runList("projects",
+			[]string{"ID", "Name", "Type", "Alert", "Created"},
+			func() ([]*models.Project, error) {
+				resp, err := apiClient.Project.GetProjects(project.NewGetProjectsParams(), nil)
+				if err != nil {
+					return nil, err
+				}
+				return resp.GetPayload(), nil
+			},
+			func(p *models.Project) []string {
+				return []string{
+					strconv.FormatInt(p.ID, 10),
+					p.Name,
+					p.Type,
+					strconv.FormatBool(p.Alert),
+					p.Created,
+				}
 			})
-		}
-
-		if len(rows) == 0 {
-			printEmptyList("projects")
-			return nil
-		}
-
-		output.PrintTable(headers, rows)
-		return nil
 	},
 }
 
