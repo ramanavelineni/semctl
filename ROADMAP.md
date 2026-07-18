@@ -132,11 +132,7 @@ Remaining:
 - **4.4 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
   anywhere; Ctrl-C kills mid-apply with no resumability note and can't cancel in-flight
   HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
-- **4.5 Server version awareness.** Client targets 2.18.20; no version detection exists.
-  Runner/user-options commands 404 raw on older servers, and a schedules-list 404 aborts an
-  entire apply plan even for configs without schedules. Fetch it once per session (`semctl info` /
-  `Operations.GetInfo` now exist), warn on mismatch, degrade gracefully.
-- **4.6 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
+- **4.5 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
   and let `RunE` propagate.
 
 ---
@@ -158,5 +154,4 @@ Still pending:
 
 ## Suggested Order
 
-1. **§4.5 server version awareness** (cheap now that `semctl info` exists).
-2. The rest of §1/§2/§3/§4/§5 opportunistically.
+1. The rest of §1/§2/§3/§4/§5 opportunistically — no single item is blocking.

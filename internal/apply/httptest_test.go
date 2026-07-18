@@ -531,3 +531,32 @@ func TestExecute_ProjectDeleteTearsDownChildren(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildPlan_SchedulesEndpointMissing(t *testing.T) {
+	f := newFakeSemaphore(t)
+	f.projects = []*models.Project{{ID: 1, Name: "proj"}}
+	// Pre-2.18 servers have no schedules-list endpoint.
+	f.failOn["GET /api/project/1/schedules"] = http.StatusNotFound
+
+	cfg := &ApplyConfig{
+		Project:     "proj",
+		Inventories: []InventoryEntry{{Name: "inv1", Type: "static"}},
+		Schedules:   []ScheduleEntry{{Name: "sch1", TemplateID: 1, CronFormat: "* * * * *"}},
+	}
+
+	recon := NewReconciler(f.client(), cfg)
+	plan, err := recon.BuildPlan()
+	if err != nil {
+		t.Fatalf("BuildPlan should tolerate a missing schedules API, got: %v", err)
+	}
+
+	// The rest of the plan still builds; schedules are left unmanaged.
+	if got := findAction(t, plan, ResourceInventory, "inv1").Action; got != ActionCreate {
+		t.Errorf("inventory action = %s, want create", got)
+	}
+	for _, a := range plan.Actions {
+		if a.Type == ResourceSchedule {
+			t.Errorf("unexpected schedule action %s %q — schedules must be unmanaged on 404", a.Action, a.Label)
+		}
+	}
+}

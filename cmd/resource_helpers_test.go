@@ -53,3 +53,20 @@ func TestRunDelete_YesSkipsPromptAndWrapsError(t *testing.T) {
 		t.Errorf("error = %v, want wrapped delete error", err)
 	}
 }
+
+func TestRunList_NotFoundGetsVersionHint(t *testing.T) {
+	err := runList("runners", []string{"ID"},
+		func() ([]string, error) { return nil, &codedErr{404} },
+		func(s string) []string { return []string{s} })
+	if err == nil || !strings.Contains(err.Error(), "may not support this API") {
+		t.Errorf("error = %v, want version hint for list 404", err)
+	}
+
+	// Other statuses keep the plain wrap.
+	err = runList("runners", []string{"ID"},
+		func() ([]string, error) { return nil, &codedErr{500} },
+		func(s string) []string { return []string{s} })
+	if err == nil || strings.Contains(err.Error(), "may not support") {
+		t.Errorf("error = %v, want plain wrap for 500", err)
+	}
+}

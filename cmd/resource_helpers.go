@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/spf13/cobra"
@@ -25,6 +26,12 @@ func parseIDArg(arg, what string) (int64, error) {
 func runList[T any](what string, headers []string, fetch func() ([]T, error), row func(T) []string) error {
 	items, err := fetch()
 	if err != nil {
+		// A 404 on a LIST endpoint is never "resource not found" (empty
+		// collections return 200 []) — the server lacks the API entirely,
+		// which usually means an older Semaphore version.
+		if client.IsNotFound(err) {
+			return fmt.Errorf("failed to list %s: %w (the server may not support this API — semctl targets Semaphore %s.x, check 'semctl info')", what, err, client.TargetSemaphoreVersion)
+		}
 		return fmt.Errorf("failed to list %s: %w", what, err)
 	}
 

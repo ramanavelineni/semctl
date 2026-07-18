@@ -3,8 +3,6 @@ package cmd
 import (
 	"errors"
 
-	"github.com/go-openapi/runtime"
-
 	"github.com/ramanavelineni/semctl/internal/client"
 )
 
@@ -52,18 +50,7 @@ func exitCodeFor(err error) int {
 		return exitAuth
 	}
 
-	// go-swagger errors: spec-declared error responses implement Code();
-	// undeclared statuses surface as *runtime.APIError with a Code field.
-	status := 0
-	var coded interface{ Code() int }
-	var apiErr *runtime.APIError
-	switch {
-	case errors.As(err, &coded):
-		status = coded.Code()
-	case errors.As(err, &apiErr):
-		status = apiErr.Code
-	}
-	switch status {
+	switch client.HTTPStatus(err) {
 	case 401, 403:
 		return exitAuth
 	case 404:
