@@ -242,6 +242,7 @@ Precedence: command-line flags > environment variables > config file.
 | v0.5.0 | v2.18.20     | API client regenerated for Semaphore 2.18; template multi-variable-group assignments and task params preserved on update |
 | v0.6.0 | v2.18.20     | Runner management commands (global and project-scoped) |
 | v0.7.0 | v2.18.20     | User management commands, per-user options, interactive forms on all create commands |
+| v0.8.0 | v2.18.20     | Schedule/token/event/info commands; CLI bug-fix batch (`login -s`, `--no-color`, exit codes on typos/empty lists, `key update` secret guard); security hardening (server-bound token cache, post-parse `${VAR}` expansion, context-name validation); distinct exit codes + `--json` for mutations; `apply --detailed-exitcode` drift gate; generic command helpers |
 
 The API client is generated from the Semaphore UI OpenAPI spec. Each semctl release is tested against the listed Semaphore UI version. Older or newer versions of Semaphore UI may work but are not guaranteed.
 
