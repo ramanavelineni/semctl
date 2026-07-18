@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 
@@ -17,8 +20,8 @@ var keyCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create an access key",
 	Example: `  semctl key create --name "None Key" --type none
-  semctl key create --name "SSH Key" --type ssh --private-key "$(cat ~/.ssh/id_rsa)"
-  semctl key create --name "Login" --type login_password --login admin --password secret`,
+  semctl key create --name "SSH Key" --type ssh --private-key-file ~/.ssh/id_deploy
+  echo "$PASS" | semctl key create --name "Login" --type login_password --login admin --password-stdin`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pid, err := getProjectID(cmd)
 		if err != nil {
@@ -29,8 +32,32 @@ var keyCreateCmd = &cobra.Command{
 		keyType, _ := cmd.Flags().GetString("type")
 		login, _ := cmd.Flags().GetString("login")
 		privateKey, _ := cmd.Flags().GetString("private-key")
+		privateKeyFile, _ := cmd.Flags().GetString("private-key-file")
 		passphrase, _ := cmd.Flags().GetString("passphrase")
 		password, _ := cmd.Flags().GetString("password")
+		passwordStdin, _ := cmd.Flags().GetBool("password-stdin")
+
+		// File/stdin variants keep secrets out of argv, ps, and shell history.
+		if privateKey != "" && privateKeyFile != "" {
+			return fmt.Errorf("cannot use --private-key and --private-key-file together")
+		}
+		if privateKeyFile != "" {
+			data, err := os.ReadFile(privateKeyFile)
+			if err != nil {
+				return fmt.Errorf("reading private key file: %w", err)
+			}
+			privateKey = string(data)
+		}
+		if password != "" && passwordStdin {
+			return fmt.Errorf("cannot use --password and --password-stdin together")
+		}
+		if passwordStdin {
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading password from stdin: %w", err)
+			}
+			password = strings.TrimRight(string(data), "\r\n")
+		}
 
 		interactive, err := shouldAutoInteractive(cmd, name == "" || keyType == "")
 		if err != nil {
@@ -137,7 +164,9 @@ func init() {
 	keyCreateCmd.Flags().String("name", "", "key name (required)")
 	keyCreateCmd.Flags().String("type", "", "key type: none, ssh, login_password (required)")
 	keyCreateCmd.Flags().String("login", "", "login username (for ssh/login_password)")
-	keyCreateCmd.Flags().String("private-key", "", "SSH private key content")
+	keyCreateCmd.Flags().String("private-key", "", "SSH private key content (prefer --private-key-file)")
+	keyCreateCmd.Flags().String("private-key-file", "", "path to an SSH private key file")
 	keyCreateCmd.Flags().String("passphrase", "", "SSH key passphrase")
-	keyCreateCmd.Flags().String("password", "", "password (for login_password type)")
+	keyCreateCmd.Flags().String("password", "", "password (for login_password type; prefer --password-stdin)")
+	keyCreateCmd.Flags().Bool("password-stdin", false, "read the password from stdin")
 }

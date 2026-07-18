@@ -11,7 +11,7 @@ import (
 )
 
 var contextRenameCmd = &cobra.Command{
-	Use:     "rename [old-name] [new-name]",
+	Use:     "rename <old-name> <new-name>",
 	Short:   "Rename a context",
 	Args:    cobra.ExactArgs(2),
 	Example: "  semctl context rename default production",

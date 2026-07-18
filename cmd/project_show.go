@@ -35,7 +35,7 @@ var projectShowCmd = &cobra.Command{
 				return resp.GetPayload(), nil
 			},
 			func(p *models.Project) [][]string {
-				maxParallel := "0"
+				maxParallel := "" // nil = unset; "0" would fake an explicit value
 				if p.MaxParallelTasks != nil {
 					maxParallel = strconv.FormatInt(*p.MaxParallelTasks, 10)
 				}

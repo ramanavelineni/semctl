@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 
@@ -28,6 +31,18 @@ var envCreateCmd = &cobra.Command{
 		jsonVars, _ := cmd.Flags().GetString("json-vars")
 		env, _ := cmd.Flags().GetString("env")
 		password, _ := cmd.Flags().GetString("password")
+		passwordStdin, _ := cmd.Flags().GetBool("password-stdin")
+
+		if password != "" && passwordStdin {
+			return fmt.Errorf("cannot use --password and --password-stdin together")
+		}
+		if passwordStdin {
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading password from stdin: %w", err)
+			}
+			password = strings.TrimRight(string(data), "\r\n")
+		}
 
 		interactive, err := shouldAutoInteractive(cmd, name == "")
 		if err != nil {
@@ -90,5 +105,6 @@ func init() {
 	envCreateCmd.Flags().String("name", "", "environment name (required)")
 	envCreateCmd.Flags().String("json-vars", "", "environment JSON variables")
 	envCreateCmd.Flags().String("env", "", "extra environment variables")
-	envCreateCmd.Flags().String("password", "", "environment password")
+	envCreateCmd.Flags().String("password", "", "environment password (prefer --password-stdin)")
+	envCreateCmd.Flags().Bool("password-stdin", false, "read the password from stdin")
 }

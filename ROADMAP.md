@@ -22,49 +22,20 @@ the cache-dir home error. Remaining items:
   `semctl.yaml` that changes the resolved server while `SEMCTL_AUTH_USERNAME/PASSWORD` are
   set — the login itself still goes to the config's server) needs opt-in trust for CWD
   configs (direnv-style: prompt once, remember the path).
-- **1.2 Non-argv secret input for key/env commands.** `key create --private-key/--passphrase`
-  and `env create --password` only accept secrets via argv (ps/shell-history leak); the
-  key create Example even teaches `--private-key "$(cat ~/.ssh/id_rsa)"`. Add
-  `--private-key-file` and `--password-stdin` variants.
----
-
-## 2. CI/CD Friendliness
-
-The trio of distinct exit codes (documented in `semctl --help` and README), `--json` output
-for `task run`/create commands, and the `apply --detailed-exitcode` + JSON plan drift gate
-shipped on feat/cicd-friendliness. Remaining items:
-
-- **2.1 Transient-5xx retry/backoff and `--wait-timeout` default.** Non-TTY unbounded
-  waits now warn (shipped); still open: opt-in retry/backoff for transient 5xx (only 401
-  is retried) and whether `--wait-timeout` should default non-zero.
-- **2.2 Ephemeral-token revoke-on-exit.** Each cookie login mints a
-  server-side API token that is never revoked; on a read-only filesystem the ignored cache
-  write (`client.go:146-150`) means every command mints another. Document
-  `SEMCTL_API_TOKEN` as the CI path; consider revoking ephemeral tokens at exit.
-- **2.3 Distribution extras.** goreleaser: consider a homebrew tap, docker image, and
-  SBOM/artifact signing if distributing publicly.
 
 ---
 
 ## 3. UX Polish
 
-- **3.1 Consistency fixes:**
-  - `project update` takes no positional ID while every other update does — accept one.
-  - Name resolution works for `-p` but nowhere else (`project show myproj` fails) — accept
-    names in positional resource args.
-  - Unified `--output table|json|yaml` (keep `--json`/`--yaml` as aliases; error on
-    conflict — today `--json --yaml` silently picks JSON). Note `export -o` means *file*.
-  - Accept kebab-case in `field=value` args (create flags are kebab, update fields snake).
-  - Standardize update-arg validation on the friendly `no fields to update` message
-    (user/runner use bare cobra `requires at least 2 arg(s)`).
-  - Usage brackets: `context use [name]` → `<name>` (args are required).
+- **3.1 Remaining consistency decisions.** Name resolution in positional args
+  (`project show myproj`) and a unified `--output table|json|yaml` flag (today
+  `--json --yaml` silently picks JSON; note `export -o` means *file*). The mechanical
+  items (positional ID for project update, kebab-case field=value, standardized
+  update-arg validation, usage brackets) shipped in polish batch A.
 - **3.2 Form improvements:** populate repository/inventory/environment selects from the API
   in `template create` (the two-stage `key create` form is the pattern to copy); note in
   forms that more options exist as flags; add a form to `task run`; optional pre-filled
   forms for update commands when no `field=value` args are given.
-- **3.3 Table rendering:** wrap/truncate long cells (`WrapNone` today produces enormous
-  lines for env JSON); render nil ints as `-`/empty, not `0` (nil `MaxParallelTasks`
-  currently indistinguishable from explicit 0).
 
 ---
 
@@ -76,12 +47,7 @@ migrated (~360 lines removed). httptest coverage for the apply executor/reconcil
 shipped on test/apply-httptest (fake in-memory Semaphore server; apply package 29%→65%).
 Remaining:
 
-- **4.1 Shared `TemplateRequest` builder.** Request building is triplicated
-  (`cmd/template_create.go`, `cmd/template_update.go`, twice in
-  `internal/apply/executor.go`) with two different SurveyVars/Vaults/EnvironmentIds/
-  TaskParams preservation mechanisms — the invariant that already bit once. One shared
-  builder used by both cmd and executor.
-- **4.2 Apply sharp edges:**
+- **4.1 Apply sharp edges:**
   - Unresolvable name refs return `0` silently (`reconcile.go:842`) — a typo'd
     `ssh_key: my-kye` creates a repo with `SSHKeyID: 0`. Return errors naming the reference.
   - On partial failure the executor attempts dependents of failed creates. Track failed
@@ -94,13 +60,13 @@ Remaining:
     causes false-positive updates on key order/whitespace (`reconcile.go:709-722`).
   - Document that merge semantics can't unset a field (empty = keep); consider a
     `field: null` convention if apply should be a full source of truth.
-- **4.3 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
+- **4.2 Unify config ownership under yaml.v3.** Viper lowercases keys on read while
   yaml.v3 writes verbatim — a context named `Prod` lists as `prod` and a save can create a
   duplicate `prod:` key Viper then merges unpredictably. Writes destroy comments and aren't
   atomic (no temp+rename, no lock) — concurrent `login`s can corrupt the file. Env overrides
   are already manual `os.Getenv`, so Viper earns little here. Normalize context names
   (lowercase at the boundary, as apply does) and write atomically.
-- **4.4 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
+- **4.3 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
   anywhere; Ctrl-C kills mid-apply with no resumability note and can't cancel in-flight
   HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
 

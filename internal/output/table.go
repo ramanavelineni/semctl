@@ -12,7 +12,10 @@ import (
 func PrintTable(headers []string, rows [][]string) {
 	table := tablewriter.NewTable(os.Stdout,
 		tablewriter.WithHeaderAutoWrap(tw.WrapNone),
-		tablewriter.WithRowAutoWrap(tw.WrapNone),
+		// Wrap long cells (env JSON, ansible output) instead of emitting
+		// one enormous line; headers stay unwrapped.
+		tablewriter.WithRowAutoWrap(tw.WrapBreak),
+		tablewriter.WithRowMaxWidth(100),
 		tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
 			Borders: tw.BorderNone,
 			Settings: tw.Settings{

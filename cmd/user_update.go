@@ -18,13 +18,16 @@ var userUpdateCmd = &cobra.Command{
 	Long: `Update user fields using field=value pairs.
 
 Supported fields: username, name, email, admin, alert`,
-	Args: cobra.MinimumNArgs(2),
+	Args: cobra.MinimumNArgs(1),
 	Example: `  semctl user update 2 name="Jane Doe"
   semctl user update 2 admin=true alert=false`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid user ID: %w", err)
+		}
+		if len(args) < 2 {
+			return fmt.Errorf("no fields to update — provide field=value pairs")
 		}
 
 		apiClient, err := client.NewAuthenticatedClient()
@@ -53,6 +56,7 @@ Supported fields: username, name, email, admin, alert`,
 			if !ok {
 				return fmt.Errorf("invalid argument %q — expected field=value", arg)
 			}
+			key = strings.ReplaceAll(key, "-", "_") // accept kebab-case like the create flags
 			switch key {
 			case "username":
 				req.Username = value

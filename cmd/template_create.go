@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/ramanavelineni/semctl/internal/apply"
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -105,9 +106,8 @@ var templateCreateCmd = &cobra.Command{
 			Autorun:         autorun,
 			BuildTemplateID: buildTplID,
 			ViewID:          viewID,
-			SurveyVars:      []*models.TemplateSurveyVar{},
-			Vaults:          []*models.TemplateVault{},
 		}
+		apply.PreserveUnmanagedTemplateFields(req, nil)
 
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {

@@ -18,7 +18,7 @@ var runnerUpdateCmd = &cobra.Command{
 	Long: `Update runner fields using field=value pairs.
 
 Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webhook`,
-	Args: cobra.MinimumNArgs(2),
+	Args: cobra.MinimumNArgs(1),
 	Example: `  semctl runner update 1 name=build-runner
   semctl runner update 1 active=false max_parallel_tasks=4
   semctl runner update 1 tags=gpu,cuda`,
@@ -26,6 +26,9 @@ Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webh
 		id, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid runner ID: %w", err)
+		}
+		if len(args) < 2 {
+			return fmt.Errorf("no fields to update — provide field=value pairs")
 		}
 
 		pid, projectScoped, err := runnerScope(cmd)
@@ -79,6 +82,7 @@ Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webh
 			if !ok {
 				return fmt.Errorf("invalid argument %q — expected field=value", arg)
 			}
+			key = strings.ReplaceAll(key, "-", "_") // accept kebab-case like the create flags
 			switch key {
 			case "name":
 				req.Name = value
