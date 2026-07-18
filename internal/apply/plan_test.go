@@ -156,3 +156,32 @@ func TestFormatPlanWithDescription(t *testing.T) {
 		t.Errorf("FormatPlan missing description, got:\n%s", output)
 	}
 }
+
+func TestPlanJSON(t *testing.T) {
+	p := &Plan{Actions: []ResourceAction{
+		{Type: ResourceKey, Action: ActionCreate, Label: "deploy-key"},
+		{Type: ResourceTemplate, Action: ActionUpdate, Label: "Deploy", ExistingID: 7, Description: "secrets always re-applied"},
+		{Type: ResourceRepository, Action: ActionSkip, Label: "main-repo", ExistingID: 3},
+	}}
+
+	doc := p.JSON("a.yaml")
+	if doc.File != "a.yaml" {
+		t.Errorf("File = %q, want a.yaml", doc.File)
+	}
+	if len(doc.Actions) != 3 {
+		t.Fatalf("len(Actions) = %d, want 3", len(doc.Actions))
+	}
+	if doc.Actions[0].Type != "keys" || doc.Actions[0].Action != "create" || doc.Actions[0].Name != "deploy-key" {
+		t.Errorf("action[0] = %+v", doc.Actions[0])
+	}
+	if doc.Actions[1].ID != 7 || doc.Actions[1].Detail != "secrets always re-applied" {
+		t.Errorf("action[1] = %+v", doc.Actions[1])
+	}
+	if doc.Actions[2].Action != "unchanged" {
+		t.Errorf("action[2].Action = %q, want unchanged", doc.Actions[2].Action)
+	}
+	s := doc.Summary
+	if s.Create != 1 || s.Update != 1 || s.Delete != 0 || s.Unchanged != 1 {
+		t.Errorf("summary = %+v", s)
+	}
+}

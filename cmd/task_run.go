@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	apiclientpkg "github.com/ramanavelineni/semctl/pkg/semapi/client"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/task"
@@ -85,6 +86,11 @@ CI pipelines that need to gate on task success.`,
 		t := resp.GetPayload()
 		style.Success(fmt.Sprintf("Started task %d (template: %d)", t.ID, t.TemplateID))
 
+		// Machine-readable task on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(t, nil, nil)
+		}
+
 		if !wait {
 			return nil
 		}
@@ -125,12 +131,12 @@ func waitForTask(apiClient *apiclientpkg.Semapi, projectID, taskID int64, follow
 				style.Success(fmt.Sprintf("Task %d finished: %s", taskID, status))
 				return nil
 			case "error", "stopped":
-				return fmt.Errorf("task %d finished with status %q", taskID, status)
+				return withExitCode(fmt.Errorf("task %d finished with status %q", taskID, status), exitTaskFailed)
 			}
 		}
 
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s waiting for task %d (task is still running server-side)", waitTimeout, taskID)
+			return withExitCode(fmt.Errorf("timed out after %s waiting for task %d (task is still running server-side)", waitTimeout, taskID), exitWaitTimeout)
 		}
 
 		time.Sleep(taskPollInterval)

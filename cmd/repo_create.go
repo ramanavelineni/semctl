@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -87,6 +88,10 @@ var repoCreateCmd = &cobra.Command{
 
 		r := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created repository %q (ID: %d)", r.Name, r.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(r, nil, nil)
+		}
 		return nil
 	},
 }

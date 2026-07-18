@@ -107,6 +107,40 @@ steps:
 - `SEMCTL_AUTH_USERNAME` / `SEMCTL_AUTH_PASSWORD` are supported as an
   alternative to a token (semctl logs in and creates a token per run).
 - All HTTP requests have a 30s timeout by default; tune with `--timeout`.
+- With `--json`/`--yaml`, `task run` and every `create` command print the new
+  resource to stdout, so pipelines can capture IDs without scraping messages:
+
+```bash
+TASK_ID=$(semctl -p 1 task run --template-id 5 --json | jq -r .id)
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | success |
+| 1 | generic error |
+| 2 | changes pending (`apply --detailed-exitcode`) |
+| 3 | authentication failure |
+| 4 | resource not found |
+| 5 | cancelled by user |
+| 6 | task finished with error/stopped status (`task run --wait`) |
+| 7 | wait timeout expired (`task run --wait-timeout`) |
+
+### GitOps drift gate
+
+`apply --dry-run --detailed-exitcode` follows the `terraform plan` convention,
+and `--json` emits the plan as structured data (names and actions only — never
+values or secrets):
+
+```bash
+semctl apply -f semaphore/ --dry-run --detailed-exitcode --json > plan.json
+case $? in
+  0) echo "in sync" ;;
+  2) echo "drift detected"; cat plan.json ;;
+  *) echo "plan failed" ;;
+esac
+```
 
 ## Multi-Server Contexts
 

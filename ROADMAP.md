@@ -43,25 +43,20 @@ validation) shipped on fix/security-batch. Remaining items:
 
 ## 2. CI/CD Friendliness
 
-- **2.1 Distinct exit codes.** Everything exits 1 (`cmd/root.go`) — auth failure,
-  not-found, cancelled, task-failed, and wait-timeout are indistinguishable. Map sentinel
-  errors (`errCancelled` exists already) to documented codes in `Execute()`.
-- **2.2 Machine-readable mutations.** `task run` prints the new task ID only in a styled
-  stderr message (`cmd/task_run.go:86`); same for every create command. Honor `--json` by
-  printing the created resource/task to stdout so pipelines can capture IDs.
-- **2.3 `apply --dry-run` drift gate.** Exits 0 whether the plan is empty or full
-  (`cmd/apply.go:87-95`), plan is human text on stderr. Add `--detailed-exitcode`
-  (0 in-sync / 2 changes / 1 error) and a `--json` plan output for GitOps loops.
-- **2.4 `--quiet` flag** suppressing `style.Success/Info` (keep Error/Warning) — today the
+The trio of distinct exit codes (documented in `semctl --help` and README), `--json` output
+for `task run`/create commands, and the `apply --detailed-exitcode` + JSON plan drift gate
+shipped on feat/cicd-friendliness. Remaining items:
+
+- **2.1 `--quiet` flag** suppressing `style.Success/Info` (keep Error/Warning) — today the
   only silencer is `2>/dev/null`, which also hides real errors.
-- **2.5 `--wait-timeout` defaults to 0 = wait forever** (`cmd/task_run.go:187`) — pick a
+- **2.2 `--wait-timeout` defaults to 0 = wait forever** (`cmd/task_run.go:187`) — pick a
   sane default or warn when waiting unbounded in non-TTY mode. Consider opt-in
   retry/backoff for transient 5xx (only 401 is retried today).
-- **2.6 Ephemeral-token leak on username/password auth.** Each cookie login mints a
+- **2.3 Ephemeral-token leak on username/password auth.** Each cookie login mints a
   server-side API token that is never revoked; on a read-only filesystem the ignored cache
   write (`client.go:146-150`) means every command mints another. Document
   `SEMCTL_API_TOKEN` as the CI path; consider revoking ephemeral tokens at exit.
-- **2.7 Own CI hardening** (`.github/workflows/`): `go test -race -cover`, govulncheck,
+- **2.4 Own CI hardening** (`.github/workflows/`): `go test -race -cover`, govulncheck,
   dependabot, pin golangci-lint version (currently `latest`), cross-compile darwin/windows
   in CI (`goreleaser build --snapshot`), gate release.yml on lint too. goreleaser: consider
   homebrew tap / docker image / SBOM+signing if distributing publicly.
@@ -204,7 +199,7 @@ API token management for the logged-in user. Uses `apiClient.Authentication`.
 ### Notes
 - The token ID *is* the token — treat list/create output accordingly (stdout, maskable).
 - Not project-scoped (user-level). No update endpoint.
-- Nice pairing with 1.7/2.6: a `token prune` or revoke-on-exit story for CI-minted tokens.
+- Nice pairing with 1.5/2.3: a `token prune` or revoke-on-exit story for CI-minted tokens.
 
 ---
 
@@ -247,7 +242,6 @@ Still pending:
 
 ## Suggested Order
 
-1. **§2.1–2.3 CI/CD** — exit codes, `--json` mutations, apply drift gate (biggest scripting wins).
-2. **§4.1 generic helpers**, then **§5–§8 new commands** on top of them.
-3. **§4.7 httptest coverage** alongside any apply work (§4.3).
-4. The rest of §1/§3/§4 opportunistically.
+1. **§4.1 generic helpers**, then **§5–§8 new commands** on top of them.
+2. **§4.7 httptest coverage** alongside any apply work (§4.3).
+3. The rest of §1/§2/§3/§4 opportunistically.

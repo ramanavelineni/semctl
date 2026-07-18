@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/variable_group"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -74,6 +75,11 @@ var envCreateCmd = &cobra.Command{
 
 		e := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created environment %q (ID: %d)", e.Name, e.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			e.Password = "" // never echo the submitted secret
+			output.Print(e, nil, nil)
+		}
 		return nil
 	},
 }

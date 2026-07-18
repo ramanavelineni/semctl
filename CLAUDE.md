@@ -22,6 +22,8 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - Update commands use `field=value` positional args pattern: fetch current resource, apply overrides, PUT back
 - Confirmations use `confirmAction(cmd, prompt)` (cmd/confirm.go): `--yes` skips; non-TTY stdin without `--yes` errors; declining returns `errCancelled` → non-zero exit. Never inline `[y/N]` prompts
 - `task run --wait/--follow` polls status until success/error/stopped; non-success = non-zero exit
+- Exit codes (cmd/exitcodes.go, mapped in `Execute()` via `exitCodeFor`): 1 generic, 2 apply drift (`--detailed-exitcode`), 3 auth (client.ErrNoCredentials/ErrAuthFailed sentinels + 401/403), 4 not-found (404), 5 cancelled (errCancelled), 6 task failed, 7 wait timeout. Attach specific codes with `withExitCode(err, code)`
+- Under `--json`/`--yaml`, `task run` and all create commands print the created resource to stdout (env create clears `Password` first); `apply` prints `[]apply.PlanJSON` plan docs to stdout
 - All API calls pass `nil` for authInfo, relying on `transport.DefaultAuthentication`
 
 ## API Client Gotchas

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/ramanavelineni/semctl/internal/client"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
 	"github.com/ramanavelineni/semctl/pkg/semapi/models"
@@ -124,6 +125,10 @@ var templateCreateCmd = &cobra.Command{
 
 		t := resp.GetPayload()
 		style.Success(fmt.Sprintf("Created template %q (ID: %d)", t.Name, t.ID))
+		// Machine-readable resource on stdout so pipelines can capture the ID.
+		if output.GetFormat() != output.FormatTable {
+			output.Print(t, nil, nil)
+		}
 		return nil
 	},
 }

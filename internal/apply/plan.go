@@ -113,6 +113,49 @@ func (p *Plan) ActionsByType(rt ResourceType) []ResourceAction {
 	return result
 }
 
+// PlanJSON is the machine-readable form of one file's plan, emitted by
+// `semctl apply --json/--yaml` for GitOps drift gates and audit trails.
+type PlanJSON struct {
+	File    string       `json:"file" yaml:"file"`
+	Actions []ActionJSON `json:"actions" yaml:"actions"`
+	Summary SummaryJSON  `json:"summary" yaml:"summary"`
+}
+
+// ActionJSON is one planned action in machine-readable form.
+type ActionJSON struct {
+	Type   string `json:"type" yaml:"type"`
+	Action string `json:"action" yaml:"action"`
+	Name   string `json:"name" yaml:"name"`
+	ID     int64  `json:"id,omitempty" yaml:"id,omitempty"`
+	Detail string `json:"detail,omitempty" yaml:"detail,omitempty"`
+}
+
+// SummaryJSON is the plan's action counts in machine-readable form.
+type SummaryJSON struct {
+	Create    int `json:"create" yaml:"create"`
+	Update    int `json:"update" yaml:"update"`
+	Delete    int `json:"delete" yaml:"delete"`
+	Unchanged int `json:"unchanged" yaml:"unchanged"`
+}
+
+// JSON converts the plan to its machine-readable form. Values never appear
+// in a plan (only names, actions, and neutral detail strings), so this is
+// safe to persist in CI logs.
+func (p *Plan) JSON(file string) PlanJSON {
+	doc := PlanJSON{File: file, Actions: make([]ActionJSON, 0, len(p.Actions))}
+	for _, a := range p.Actions {
+		doc.Actions = append(doc.Actions, ActionJSON{
+			Type:   string(a.Type),
+			Action: a.Action.String(),
+			Name:   a.Label,
+			ID:     a.ExistingID,
+			Detail: a.Description,
+		})
+	}
+	doc.Summary.Create, doc.Summary.Update, doc.Summary.Delete, doc.Summary.Unchanged = p.Summary()
+	return doc
+}
+
 // FormatPlan returns a human-readable plan summary.
 func (p *Plan) FormatPlan() string {
 	if len(p.Actions) == 0 {
