@@ -230,7 +230,8 @@ func newClientWithToken(token string, allowReauth bool) (*apiclient.Semapi, erro
 	// are set. Require our own variable instead.
 	transport.Debug = os.Getenv("SEMCTL_DEBUG") != ""
 	transport.DefaultAuthentication = httptransport.BearerToken(token)
-	return apiclient.New(transport, strfmt.Default), nil
+	// Every API error passes through TranslateAPIError on its way out.
+	return apiclient.New(&translatingTransport{inner: transport}, strfmt.Default), nil
 }
 
 func joinHostPort(host string, port int) string {
@@ -321,7 +322,9 @@ func LoginAndCreateToken(serverURL, username, password string) (string, error) {
 
 	loginResp, err := httpClient.Post(serverURL+"/auth/login", "application/json", bytes.NewReader(loginBody))
 	if err != nil {
-		return "", fmt.Errorf("login request failed: %w", err)
+		// Raw net/http path — translate here since it bypasses the
+		// swagger transport hook.
+		return "", fmt.Errorf("login request failed: %w", TranslateAPIError(err))
 	}
 	defer loginResp.Body.Close()
 
