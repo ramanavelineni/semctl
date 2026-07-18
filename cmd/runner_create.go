@@ -101,8 +101,7 @@ store it safely; it is what the runner process uses to authenticate.`,
 		style.Success(fmt.Sprintf("Created runner %q (ID: %d)", created.Name, created.ID))
 
 		if output.GetFormat() != output.FormatTable {
-			output.Print(created, nil, nil)
-			return nil
+			return output.Print(created, nil, nil)
 		}
 
 		if created.Token != "" {

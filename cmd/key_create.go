@@ -125,7 +125,7 @@ var keyCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created key %q (ID: %d)", k.Name, k.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(k, nil, nil)
+			return output.Print(k, nil, nil)
 		}
 		return nil
 	},

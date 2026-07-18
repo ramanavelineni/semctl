@@ -38,20 +38,22 @@ var envShowCmd = &cobra.Command{
 				if err != nil {
 					return nil, err
 				}
-				return resp.GetPayload(), nil
+				e := resp.GetPayload()
+				// Redact in every output format, not just the table — the
+				// mask keeps the "a password is set" signal without the value.
+				if e.Password != "" {
+					e.Password = strings.Repeat("*", 8)
+				}
+				return e, nil
 			},
 			func(e *models.Environment) [][]string {
-				password := ""
-				if e.Password != "" {
-					password = strings.Repeat("*", 8)
-				}
 				return [][]string{
 					{"ID", strconv.FormatInt(e.ID, 10)},
 					{"Name", e.Name},
 					{"Project ID", strconv.FormatInt(e.ProjectID, 10)},
 					{"JSON", e.JSON},
 					{"Env", e.Env},
-					{"Password", password},
+					{"Password", e.Password},
 				}
 			})
 	},

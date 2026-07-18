@@ -8,11 +8,11 @@ import (
 )
 
 // PrintYAML outputs data as YAML to stdout.
-func PrintYAML(data interface{}) {
+func PrintYAML(data interface{}) error {
 	enc := yaml.NewEncoder(os.Stdout)
 	enc.SetIndent(2)
 	if err := enc.Encode(data); err != nil {
-		fmt.Fprintf(os.Stderr, "Error encoding YAML: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("encoding YAML: %w", err)
 	}
+	return nil
 }

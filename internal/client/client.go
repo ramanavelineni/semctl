@@ -80,6 +80,10 @@ func SetCACert(path string) {
 	caCertPath = path
 }
 
+// tlsWarnOnce keeps the disabled-verification warning to one per invocation
+// (clients are constructed more than once per command).
+var tlsWarnOnce sync.Once
+
 // buildTLSConfig merges session TLS overrides with the context config.
 func buildTLSConfig() (*tls.Config, error) {
 	insecure := insecureSkipVerify
@@ -90,6 +94,14 @@ func buildTLSConfig() (*tls.Config, error) {
 		if ca == "" {
 			ca = cc.CACert
 		}
+	}
+
+	// Config-driven insecure_skip_verify would otherwise disable verification
+	// silently forever — make it visible whatever the source.
+	if insecure {
+		tlsWarnOnce.Do(func() {
+			style.Warning("TLS certificate verification is DISABLED (--insecure or server.insecure_skip_verify) — connections can be intercepted.")
+		})
 	}
 
 	if !insecure && ca == "" {
@@ -370,23 +382,32 @@ func RevokeToken(serverURL, token string) error {
 	return nil
 }
 
-// getCacheDir returns the cache directory path for semctl.
-func getCacheDir() string {
+// getCacheDir returns the cache directory path for semctl. Failing to
+// resolve the home directory is an error — falling back to a relative path
+// would drop the token file into whatever directory semctl runs from.
+func getCacheDir() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "semctl")
+		return filepath.Join(xdg, "semctl"), nil
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "semctl")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine cache directory: %w", err)
+	}
+	return filepath.Join(home, ".cache", "semctl"), nil
 }
 
 // TokenCachePath returns the path to the cached token file for the current context.
-func TokenCachePath() string {
+func TokenCachePath() (string, error) {
 	return TokenCachePathForContext(config.GetCurrentContext())
 }
 
 // TokenCachePathForContext returns the path to the cached token file for a specific context.
-func TokenCachePathForContext(name string) string {
-	return filepath.Join(getCacheDir(), "tokens", name+".json")
+func TokenCachePathForContext(name string) (string, error) {
+	dir, err := getCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tokens", name+".json"), nil
 }
 
 // LoadCachedToken reads and validates the cached token for the current context.
@@ -398,7 +419,10 @@ func LoadCachedToken() (string, error) {
 // server the session currently resolves to. A mismatch (context redefined,
 // server override, or legacy cache without server binding) is a cache miss.
 func loadCachedToken() (string, error) {
-	cachePath := TokenCachePath()
+	cachePath, err := TokenCachePath()
+	if err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		return "", err
@@ -434,7 +458,11 @@ func LoadCachedTokenForContext(name string) (string, error) {
 	if err := config.ValidateContextName(name); err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(TokenCachePathForContext(name))
+	cachePath, err := TokenCachePathForContext(name)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		return "", err
 	}
@@ -464,7 +492,10 @@ func SaveTokenCacheForContext(name, server, token string) error {
 	if err := config.ValidateContextName(name); err != nil {
 		return err
 	}
-	cachePath := TokenCachePathForContext(name)
+	cachePath, err := TokenCachePathForContext(name)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(cachePath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err

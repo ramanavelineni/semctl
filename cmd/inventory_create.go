@@ -100,7 +100,7 @@ var inventoryCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created inventory %q (ID: %d)", inv.Name, inv.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(inv, nil, nil)
+			return output.Print(inv, nil, nil)
 		}
 		return nil
 	},

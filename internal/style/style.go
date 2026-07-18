@@ -25,11 +25,20 @@ var (
 	EmojiServer  = "🖥️"
 
 	emojiEnabled = true
+
+	// quiet suppresses Success and Info; Warning and Error always print.
+	quiet = false
 )
 
 // SetEmojiEnabled enables or disables emoji output.
 func SetEmojiEnabled(enabled bool) {
 	emojiEnabled = enabled
+}
+
+// SetQuiet suppresses Success/Info chatter (--quiet). Warnings and errors
+// still print — silencing those would hide real problems.
+func SetQuiet(q bool) {
+	quiet = q
 }
 
 func emoji(e string) string {
@@ -39,8 +48,11 @@ func emoji(e string) string {
 	return ""
 }
 
-// Success prints a success message to stderr.
+// Success prints a success message to stderr (suppressed by --quiet).
 func Success(msg string) {
+	if quiet {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "%s%s\n", emoji(EmojiSuccess), Green(msg))
 }
 
@@ -54,8 +66,11 @@ func Warning(msg string) {
 	fmt.Fprintf(os.Stderr, "%s%s\n", emoji(EmojiWarning), Yellow(msg))
 }
 
-// Info prints an info message to stderr.
+// Info prints an info message to stderr (suppressed by --quiet).
 func Info(msg string) {
+	if quiet {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "%s%s\n", emoji(EmojiInfo), Cyan(msg))
 }
 

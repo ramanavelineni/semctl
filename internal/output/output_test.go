@@ -74,3 +74,10 @@ func TestNormalizeNilSlice(t *testing.T) {
 		t.Errorf("untyped nil was altered: %#v", got)
 	}
 }
+
+func TestPrintJSON_ReturnsEncodeError(t *testing.T) {
+	// A channel cannot be JSON-encoded; the old code os.Exit(1)'d here.
+	if err := PrintJSON(make(chan int)); err == nil {
+		t.Error("PrintJSON(chan) should return an error")
+	}
+}

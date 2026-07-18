@@ -29,12 +29,19 @@ Exit codes:
   5  cancelled by user
   6  task finished with error/stopped status (task run --wait)
   7  wait timeout expired (task run --wait-timeout)`,
+	Example: `  semctl login --server 10.0.0.1:3000 --username admin
+  semctl project list
+  semctl -p "My Project" template list
+  semctl -p 1 task run --template-id 5 --wait`,
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Session-level flags apply to every command, including those that
 		// skip config loading (e.g. login).
 		if noColor, _ := cmd.Flags().GetBool("no-color"); noColor {
 			output.DisableColor()
+		}
+		if q, _ := cmd.Flags().GetBool("quiet"); q {
+			style.SetQuiet(true)
 		}
 		if d, _ := cmd.Flags().GetDuration("timeout"); d > 0 {
 			client.SetTimeout(d)
@@ -172,6 +179,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("json", false, "output as JSON")
 	rootCmd.PersistentFlags().Bool("yaml", false, "output as YAML")
 	rootCmd.PersistentFlags().BoolP("yes", "y", false, "auto-confirm prompts")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress success/info messages (warnings and errors still print)")
 	rootCmd.PersistentFlags().Bool("no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().StringP("server", "s", "", "override server host:port for this invocation")
 	rootCmd.PersistentFlags().Duration("timeout", 30*time.Second, "HTTP request timeout (e.g. 30s, 2m)")

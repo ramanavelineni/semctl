@@ -31,8 +31,7 @@ var contextListCmd = &cobra.Command{
 				}
 				items = append(items, item)
 			}
-			output.Print(items, nil, nil)
-			return nil
+			return output.Print(items, nil, nil)
 		}
 
 		headers := []string{"", "Name", "Server", "Username"}

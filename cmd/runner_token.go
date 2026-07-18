@@ -59,8 +59,7 @@ var runnerTokenCmd = &cobra.Command{
 		}
 
 		if output.GetFormat() != output.FormatTable {
-			output.Print(tok, nil, nil)
-			return nil
+			return output.Print(tok, nil, nil)
 		}
 
 		style.Success(fmt.Sprintf("New registration token for runner %d:", id))

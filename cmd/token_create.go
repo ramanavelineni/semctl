@@ -33,8 +33,7 @@ it grants the same access as your login.`,
 		t := resp.GetPayload()
 		style.Success("Created API token.")
 		if output.GetFormat() != output.FormatTable {
-			output.Print(t, nil, nil)
-			return nil
+			return output.Print(t, nil, nil)
 		}
 		// Bare token on stdout, pipeable (like runner token).
 		fmt.Println(t.ID)

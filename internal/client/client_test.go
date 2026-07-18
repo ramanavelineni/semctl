@@ -116,7 +116,7 @@ func TestTokenCachePathForContext(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir)
 
-	got := TokenCachePathForContext("prod")
+	got, _ := TokenCachePathForContext("prod")
 	want := filepath.Join(dir, "semctl", "tokens", "prod.json")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -126,7 +126,7 @@ func TestTokenCachePathForContext(t *testing.T) {
 func TestTokenCachePathForContext_DefaultPath(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", "")
 
-	got := TokenCachePathForContext("default")
+	got, _ := TokenCachePathForContext("default")
 	home, _ := os.UserHomeDir()
 	want := filepath.Join(home, ".cache", "semctl", "tokens", "default.json")
 	if got != want {
@@ -142,7 +142,7 @@ func TestSaveTokenCacheForContext_WritesFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	path := TokenCachePathForContext("test")
+	path, _ := TokenCachePathForContext("test")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read cache file: %v", err)
@@ -165,7 +165,7 @@ func TestSaveTokenCacheForContext_Permissions(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	path := TokenCachePathForContext("perms")
+	path, _ := TokenCachePathForContext("perms")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat error: %v", err)
@@ -203,7 +203,7 @@ func TestSaveAndLoadTokenCache_RoundTrip(t *testing.T) {
 	}
 
 	// Read the file back manually (loadCachedToken uses the current context which we can't easily set)
-	path := TokenCachePathForContext("roundtrip")
+	path, _ := TokenCachePathForContext("roundtrip")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read error: %v", err)
@@ -259,7 +259,7 @@ func TestLoadCachedToken_LegacyCacheRejected(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", dir)
 	t.Setenv("SEMCTL_SERVER", "sem.example:3000")
 
-	path := TokenCachePathForContext("default")
+	path, _ := TokenCachePathForContext("default")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}

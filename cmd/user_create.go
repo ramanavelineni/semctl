@@ -95,7 +95,7 @@ var userCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created user %q (ID: %d)", u.Username, u.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(u, nil, nil)
+			return output.Print(u, nil, nil)
 		}
 		return nil
 	},

@@ -129,7 +129,9 @@ Bare $WORD text (no braces) is left untouched.`,
 
 		// Machine-readable plans on stdout (human plans went to stderr above).
 		if output.GetFormat() != output.FormatTable {
-			output.Print(planDocs, nil, nil)
+			if err := output.Print(planDocs, nil, nil); err != nil {
+				return err
+			}
 		}
 
 		if totalErrors > 0 {

@@ -90,7 +90,7 @@ var repoCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created repository %q (ID: %d)", r.Name, r.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(r, nil, nil)
+			return output.Print(r, nil, nil)
 		}
 		return nil
 	},

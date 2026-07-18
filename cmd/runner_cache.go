@@ -26,6 +26,10 @@ var runnerClearCacheCmd = &cobra.Command{
 			return err
 		}
 
+		if err := confirmAction(cmd, fmt.Sprintf("Clear cache for runner %d?", id)); err != nil {
+			return err
+		}
+
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err

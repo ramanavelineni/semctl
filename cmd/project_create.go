@@ -72,7 +72,7 @@ var projectCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created project %q (ID: %d)", p.Name, p.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(p, nil, nil)
+			return output.Print(p, nil, nil)
 		}
 		return nil
 	},

@@ -56,6 +56,12 @@ CI pipelines that need to gate on task success.`,
 			return fmt.Errorf("--template-id is required")
 		}
 
+		// Unbounded waits hang CI jobs until the runner's own timeout kills
+		// them; keep working but say so.
+		if wait && waitTimeout == 0 && !style.IsStdinTTY() {
+			style.Warning("--wait without --wait-timeout blocks indefinitely if the task hangs; set --wait-timeout in CI.")
+		}
+
 		body := task.PostProjectProjectIDTasksBody{
 			TemplateID:  templateID,
 			Message:     message,
@@ -87,8 +93,11 @@ CI pipelines that need to gate on task success.`,
 		style.Success(fmt.Sprintf("Started task %d (template: %d)", t.ID, t.TemplateID))
 
 		// Machine-readable task on stdout so pipelines can capture the ID.
+		// Must not return early: --json combines with --wait/--follow.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(t, nil, nil)
+			if err := output.Print(t, nil, nil); err != nil {
+				return err
+			}
 		}
 
 		if !wait {
