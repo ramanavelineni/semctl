@@ -48,11 +48,7 @@ shipped on feat/cicd-friendliness. Remaining items:
 
 ## 3. UX Polish
 
-- **3.1 API error translation.** Raw go-swagger errors reach users
-  (`[GET /project/{project_id}/…] …NotFound (status 404): {…}`). One `errors.As` helper
-  mapping 404 → "repository 5 not found in project 3", 401 → auth hint, 400 → server
-  message. Include the server/context identity in API errors for multi-context users.
-- **3.2 Consistency fixes:**
+- **3.1 Consistency fixes:**
   - `project update` takes no positional ID while every other update does — accept one.
   - Name resolution works for `-p` but nowhere else (`project show myproj` fails) — accept
     names in positional resource args.
@@ -62,11 +58,11 @@ shipped on feat/cicd-friendliness. Remaining items:
   - Standardize update-arg validation on the friendly `no fields to update` message
     (user/runner use bare cobra `requires at least 2 arg(s)`).
   - Usage brackets: `context use [name]` → `<name>` (args are required).
-- **3.3 Form improvements:** populate repository/inventory/environment selects from the API
+- **3.2 Form improvements:** populate repository/inventory/environment selects from the API
   in `template create` (the two-stage `key create` form is the pattern to copy); note in
   forms that more options exist as flags; add a form to `task run`; optional pre-filled
   forms for update commands when no `field=value` args are given.
-- **3.4 Table rendering:** wrap/truncate long cells (`WrapNone` today produces enormous
+- **3.3 Table rendering:** wrap/truncate long cells (`WrapNone` today produces enormous
   lines for env JSON); render nil ints as `-`/empty, not `0` (nil `MaxParallelTasks`
   currently indistinguishable from explicit 0).
 
@@ -121,7 +117,7 @@ Still pending:
 
 - `task run` form (template select from API, message, git_branch, debug/dry_run/diff toggles)
 - Update commands: optionally launch a pre-filled form when no `field=value` args are given
-- See 3.3 for form quality improvements (API-driven selects, coverage notes)
+- See 3.2 for form quality improvements (API-driven selects, coverage notes)
 
 ---
 
