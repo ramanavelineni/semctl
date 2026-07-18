@@ -6,18 +6,17 @@ toolchain go1.26.5
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
-	github.com/charmbracelet/huh v0.8.0
-	github.com/fatih/color v1.18.0
+	github.com/charmbracelet/huh v1.0.0
+	github.com/fatih/color v1.19.0
 	github.com/go-openapi/errors v0.22.8
 	github.com/go-openapi/runtime v0.32.4
-	github.com/go-openapi/strfmt v0.26.3
-	github.com/go-openapi/swag/conv v0.26.1
-	github.com/go-openapi/swag/jsonutils v0.26.1
-	github.com/go-openapi/swag/typeutils v0.26.1
+	github.com/go-openapi/strfmt v0.27.0
+	github.com/go-openapi/swag/conv v0.27.0
+	github.com/go-openapi/swag/jsonutils v0.27.0
+	github.com/go-openapi/swag/typeutils v0.27.0
 	github.com/go-openapi/validate v0.26.0
 	github.com/olekukonko/tablewriter v1.1.3
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -76,6 +75,7 @@ require (
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -83,8 +83,8 @@ require (
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 )
