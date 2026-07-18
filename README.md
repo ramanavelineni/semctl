@@ -2,6 +2,13 @@
 
 A command-line interface for managing [Semaphore UI](https://semaphoreui.com) via its REST API.
 
+**Contents:** [Installation](#installation) · [Quick Start](#quick-start) ·
+[Commands](#commands) · [Declarative Configuration](#declarative-configuration) ·
+[CI/CD Usage](#cicd-usage) · [Multi-Server Contexts](#multi-server-contexts) ·
+[Output Formats](#output-formats) · [Configuration](#configuration) ·
+[Global Flags](#global-flags) · [Compatibility](#compatibility) ·
+[Building from Source](#building-from-source)
+
 ## Installation
 
 ### From source
@@ -235,21 +242,10 @@ Precedence: command-line flags > environment variables > config file.
 
 ## Compatibility
 
-| semctl | Semaphore UI | Notes |
-|--------|--------------|-------|
-| v0.1.0 | v2.16.51     | Initial release |
-| v0.2.0 | v2.16.51     | Declarative apply, variable groups, validate |
-| v0.3.0 | v2.16.51     | Security & CI/CD hardening: env var auth, token-only login, `task run --wait`, strict apply semantics. Breaking: `--project` is now string (ID or name), cancelled prompts exit non-zero, unset `${VAR}` in apply configs is an error |
-| v0.4.0 | v2.16.51     | Schedule reconciliation: apply diffs/updates/deletes schedules by name (no more duplicates on re-apply); export includes schedules |
-| v0.5.0 | v2.18.20     | API client regenerated for Semaphore 2.18; template multi-variable-group assignments and task params preserved on update |
-| v0.6.0 | v2.18.20     | Runner management commands (global and project-scoped) |
-| v0.7.0 | v2.18.20     | User management commands, per-user options, interactive forms on all create commands |
-| v0.8.0 | v2.18.20     | Schedule/token/event/info commands; CLI bug-fix batch (`login -s`, `--no-color`, exit codes on typos/empty lists, `key update` secret guard); security hardening (server-bound token cache, post-parse `${VAR}` expansion, context-name validation); distinct exit codes + `--json` for mutations; `apply --detailed-exitcode` drift gate; generic command helpers |
-| v0.9.0 | v2.18.20     | Server version awareness: mismatch warning on apply, graceful schedule handling + friendly 404 hints on pre-2.18 servers; apply executor/reconciler test suite |
-
-The API client is generated from the Semaphore UI OpenAPI spec. Each semctl release is tested against the listed Semaphore UI version. Older or newer versions of Semaphore UI may work but are not guaranteed.
-
-> **Upgrading Semaphore UI to 2.18?** BoltDB support was removed (replaced by sqlite) — the official Docker image fails to start with `SEMAPHORE_DB_DIALECT=bolt`. Back up your `database.boltdb` and plan the migration before upgrading a 2.16 server.
+semctl targets **Semaphore UI 2.18.x**. Older servers get graceful
+degradation and version-mismatch warnings rather than raw failures.
+See [COMPATIBILITY.md](COMPATIBILITY.md) for the full release matrix and
+upgrade notes.
 
 ## Building from Source
 
