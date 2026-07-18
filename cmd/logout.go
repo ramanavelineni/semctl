@@ -77,10 +77,11 @@ saved credentials from the config file for the current (or specified) context.`,
 		}
 
 		// Delete cached token for the target context
-		cachePath := client.TokenCachePathForContext(targetContext)
-		if _, err := os.Stat(cachePath); err == nil {
-			if err := os.Remove(cachePath); err != nil {
-				style.Warning(fmt.Sprintf("Failed to delete cached token: %s", err))
+		if cachePath, err := client.TokenCachePathForContext(targetContext); err == nil {
+			if _, err := os.Stat(cachePath); err == nil {
+				if err := os.Remove(cachePath); err != nil {
+					style.Warning(fmt.Sprintf("Failed to delete cached token: %s", err))
+				}
 			}
 		}
 

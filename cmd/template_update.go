@@ -15,7 +15,7 @@ import (
 var templateUpdateCmd = &cobra.Command{
 	Use:   "update <id> [field=value...]",
 	Short: "Update a template",
-	Long:  `Update a template. Fields: name, description, type, app, playbook, git_branch, repository_id, environment_id, inventory_id, build_template_id, view_id, autorun, suppress_success_alerts.`,
+	Long:  `Update a template. Fields: name, description, type, app, playbook, git_branch, arguments, repository_id, environment_id, inventory_id, build_template_id, view_id, autorun, suppress_success_alerts.`,
 	Args:  cobra.MinimumNArgs(1),
 	Example: `  semctl template update 1 name="New Name"
   semctl template update 5 playbook=deploy.yml git_branch=main
@@ -145,7 +145,7 @@ var templateUpdateCmd = &cobra.Command{
 				}
 				req.SuppressSuccessAlerts = b
 			default:
-				return fmt.Errorf("unknown field %q", key)
+				return fmt.Errorf("unknown field %q — valid fields: name, description, type, app, playbook, git_branch, arguments, repository_id, environment_id, inventory_id, build_template_id, view_id, autorun, suppress_success_alerts", key)
 			}
 		}
 

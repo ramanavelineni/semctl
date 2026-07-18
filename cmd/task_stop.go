@@ -26,6 +26,12 @@ var taskStopCmd = &cobra.Command{
 			return err
 		}
 
+		// Stopping kills a possibly mid-deploy task — worth the same friction
+		// as a delete.
+		if err := confirmAction(cmd, fmt.Sprintf("Stop task %d?", id)); err != nil {
+			return err
+		}
+
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err

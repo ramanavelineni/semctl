@@ -549,6 +549,11 @@ func writeConfigFile(path string, data map[string]interface{}) error {
 	if err := os.WriteFile(path, out, 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
+	// WriteFile leaves a pre-existing file's mode unchanged; tighten it so a
+	// hand-created 0644 config can't end up world-readable with a password.
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("failed to tighten config permissions: %w", err)
+	}
 
 	// Reload viper
 	if v != nil {

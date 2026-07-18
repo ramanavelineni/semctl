@@ -26,10 +26,21 @@ var contextDeleteCmd = &cobra.Command{
 			return err
 		}
 
+		// Revoke the token server-side before deleting local state, like
+		// logout does — otherwise it stays valid with no local record.
+		if token, err := client.LoadCachedTokenForContext(name); err == nil && token != "" {
+			if serverDisplay := config.GetContextServerDisplay(name); serverDisplay != "" {
+				if err := client.RevokeToken(serverDisplay+"/api", token); err != nil {
+					style.Warning(fmt.Sprintf("Failed to revoke API token server-side: %s. Delete it in the Semaphore UI if needed.", err))
+				}
+			}
+		}
+
 		// Delete cached token
-		cachePath := client.TokenCachePathForContext(name)
-		if _, err := os.Stat(cachePath); err == nil {
-			_ = os.Remove(cachePath)
+		if cachePath, err := client.TokenCachePathForContext(name); err == nil {
+			if _, err := os.Stat(cachePath); err == nil {
+				_ = os.Remove(cachePath)
+			}
 		}
 
 		if err := config.DeleteContext(name); err != nil {

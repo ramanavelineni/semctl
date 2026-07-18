@@ -42,8 +42,7 @@ var userOptionsCmd = &cobra.Command{
 		}
 
 		if output.GetFormat() != output.FormatTable {
-			output.Print(options, nil, nil)
-			return nil
+			return output.Print(options, nil, nil)
 		}
 
 		if len(options) == 0 {

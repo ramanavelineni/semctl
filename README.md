@@ -111,6 +111,8 @@ steps:
 - `SEMCTL_AUTH_USERNAME` / `SEMCTL_AUTH_PASSWORD` are supported as an
   alternative to a token (semctl logs in and creates a token per run).
 - All HTTP requests have a 30s timeout by default; tune with `--timeout`.
+- `--quiet` (`-q`) suppresses success/info messages; warnings and errors
+  still print, so `2>` captures stay meaningful.
 - With `--json`/`--yaml`, `task run` and every `create` command print the new
   resource to stdout, so pipelines can capture IDs without scraping messages:
 

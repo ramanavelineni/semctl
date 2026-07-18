@@ -5,8 +5,8 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 
 ## Key Patterns
 - `pkg/semapi/` is a generated OpenAPI client — DO NOT HAND-EDIT
-- User messages → stderr via `style.Success()`, `style.Error()`, etc.
-- Data output → stdout via `output.Print()`, `output.PrintTable()`
+- User messages → stderr via `style.Success()`, `style.Error()`, etc.; `--quiet` (`style.SetQuiet`) suppresses Success/Info but never Warning/Error
+- Data output → stdout via `output.Print()`, `output.PrintTable()`; `Print`/`PrintJSON`/`PrintYAML` return errors (never os.Exit) — always return or check them
 - Config writing uses `yaml.v3` directly (not Viper) for partial file updates
 - Auth precedence: `SEMCTL_API_TOKEN`/config api_token → cached token (`~/.cache/semctl/tokens/`) → username/password cookie login (creates + caches token). On 401 with creds available, `reauthTransport` re-logins once and retries
 - Token cache is SERVER-BOUND: the cache file stores `{token, server}` (server = `scheme://host:port`); `loadCachedToken` refuses a token whose server ≠ the currently resolved server (legacy caches without the field are invalid → one forced re-login). A `--server`/`SEMCTL_SERVER` override that differs from the context's configured server (`config.ServerRedirected()`) disables both the cached token AND the re-login/password fallback, so a redefined-context or CWD-config attack can't exfiltrate credentials. `client.ServerID(scheme,host,port)` builds the binding string

@@ -42,6 +42,13 @@ func setRunnerActive(cmd *cobra.Command, idArg string, active bool) error {
 		return err
 	}
 
+	// Deactivation takes capacity out of service; activation is harmless.
+	if !active {
+		if err := confirmAction(cmd, fmt.Sprintf("Deactivate runner %d?", id)); err != nil {
+			return err
+		}
+	}
+
 	apiClient, err := client.NewAuthenticatedClient()
 	if err != nil {
 		return err

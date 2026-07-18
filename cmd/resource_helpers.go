@@ -36,8 +36,7 @@ func runList[T any](what string, headers []string, fetch func() ([]T, error), ro
 	}
 
 	if output.GetFormat() != output.FormatTable {
-		output.Print(items, nil, nil)
-		return nil
+		return output.Print(items, nil, nil)
 	}
 
 	if len(items) == 0 {
@@ -63,8 +62,7 @@ func runShow[T any](what string, fetch func() (T, error), fields func(T) [][]str
 	}
 
 	if output.GetFormat() != output.FormatTable {
-		output.Print(item, nil, nil)
-		return nil
+		return output.Print(item, nil, nil)
 	}
 
 	output.PrintTable([]string{"Field", "Value"}, fields(item))

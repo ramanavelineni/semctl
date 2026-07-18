@@ -11,7 +11,9 @@ perms) shipped on fix/cli-bug-batch and has been removed from this list.
 ## 1. Security Hardening
 
 The design-level trio (token-server binding, post-parse `${VAR}` expansion, context-name
-validation) shipped on fix/security-batch. Remaining items:
+validation) shipped on fix/security-batch; polish batch 1 closed env-show redaction,
+the TLS-disabled warning, token-cache lifecycle on rename/delete, config chmod, and
+the cache-dir home error. Remaining items:
 
 - **1.1 Env-credential redirect via CWD config (partial mitigation shipped).** The
   server-binding fix refuses a cached token / re-login when a `--server`/`SEMCTL_SERVER`
@@ -20,25 +22,10 @@ validation) shipped on fix/security-batch. Remaining items:
   `semctl.yaml` that changes the resolved server while `SEMCTL_AUTH_USERNAME/PASSWORD` are
   set — the login itself still goes to the config's server) needs opt-in trust for CWD
   configs (direnv-style: prompt once, remember the path).
-- **1.2 `env show --json` prints the password the table masks** (`cmd/env_show.go:46-54`).
-  Pick one policy; redact in all formats.
-- **1.3 Non-argv secret input for key/env commands.** `key create --private-key/--passphrase`
+- **1.2 Non-argv secret input for key/env commands.** `key create --private-key/--passphrase`
   and `env create --password` only accept secrets via argv (ps/shell-history leak); the
   key create Example even teaches `--private-key "$(cat ~/.ssh/id_rsa)"`. Add
   `--private-key-file` and `--password-stdin` variants.
-- **1.4 Warn when TLS verification is disabled via config.** `server.insecure_skip_verify`
-  from a config file (including a CWD config) silently disables verification
-  (`client.go:62-67`); only the `--insecure` flag is an explicit choice. Emit a warning once
-  per invocation whatever the source.
-- **1.5 Token-cache lifecycle gaps.** `context rename` orphans a still-valid cached token;
-  `context delete` removes the cache without server-side revocation (contrast `logout`,
-  which revokes). Rename should move the cache file; delete should attempt revocation.
-- **1.6 Tighten existing config file perms on write.** `os.WriteFile(path, out, 0600)`
-  leaves a pre-existing 0644 file at 0644 (`config.go:478`) — `login --save-password` into it
-  stores the password world-readable. `os.Chmod(path, 0600)` after write.
-- **1.7 `getCacheDir` ignores `os.UserHomeDir` error** (`client.go:330`) — on failure the
-  token lands in a relative `.cache/` under the CWD. Return an error instead.
-
 ---
 
 ## 2. CI/CD Friendliness
@@ -47,16 +34,14 @@ The trio of distinct exit codes (documented in `semctl --help` and README), `--j
 for `task run`/create commands, and the `apply --detailed-exitcode` + JSON plan drift gate
 shipped on feat/cicd-friendliness. Remaining items:
 
-- **2.1 `--quiet` flag** suppressing `style.Success/Info` (keep Error/Warning) — today the
-  only silencer is `2>/dev/null`, which also hides real errors.
-- **2.2 `--wait-timeout` defaults to 0 = wait forever** (`cmd/task_run.go:187`) — pick a
-  sane default or warn when waiting unbounded in non-TTY mode. Consider opt-in
-  retry/backoff for transient 5xx (only 401 is retried today).
-- **2.3 Ephemeral-token leak on username/password auth.** Each cookie login mints a
+- **2.1 Transient-5xx retry/backoff and `--wait-timeout` default.** Non-TTY unbounded
+  waits now warn (shipped); still open: opt-in retry/backoff for transient 5xx (only 401
+  is retried) and whether `--wait-timeout` should default non-zero.
+- **2.2 Ephemeral-token revoke-on-exit.** Each cookie login mints a
   server-side API token that is never revoked; on a read-only filesystem the ignored cache
   write (`client.go:146-150`) means every command mints another. Document
   `SEMCTL_API_TOKEN` as the CI path; consider revoking ephemeral tokens at exit.
-- **2.4 Own CI hardening** (`.github/workflows/`): `go test -race -cover`, govulncheck,
+- **2.3 Own CI hardening** (`.github/workflows/`): `go test -race -cover`, govulncheck,
   dependabot, pin golangci-lint version (currently `latest`), cross-compile darwin/windows
   in CI (`goreleaser build --snapshot`), gate release.yml on lint too. goreleaser: consider
   homebrew tap / docker image / SBOM+signing if distributing publicly.
@@ -82,16 +67,11 @@ shipped on feat/cicd-friendliness. Remaining items:
   - Standardize update-arg validation on the friendly `no fields to update` message
     (user/runner use bare cobra `requires at least 2 arg(s)`).
   - Usage brackets: `context use [name]` → `<name>` (args are required).
-- **3.4 Missing confirmations:** `task stop` (kills a running deployment), `runner
-  deactivate`, `runner clear-cache`.
-- **3.5 Help text:** `template update` Long omits the `arguments` field and its
-  unknown-field error doesn't list valid fields (every sibling does); document
-  `user show me`; add a root-level Example showing the login → project list → task run flow.
-- **3.6 Form improvements:** populate repository/inventory/environment selects from the API
+- **3.4 Form improvements:** populate repository/inventory/environment selects from the API
   in `template create` (the two-stage `key create` form is the pattern to copy); note in
   forms that more options exist as flags; add a form to `task run`; optional pre-filled
   forms for update commands when no `field=value` args are given.
-- **3.7 Table rendering:** wrap/truncate long cells (`WrapNone` today produces enormous
+- **3.5 Table rendering:** wrap/truncate long cells (`WrapNone` today produces enormous
   lines for env JSON); render nil ints as `-`/empty, not `0` (nil `MaxParallelTasks`
   currently indistinguishable from explicit 0).
 
@@ -132,8 +112,6 @@ Remaining:
 - **4.4 `context.Context` + signal handling.** No `ExecuteContext`/`signal.NotifyContext`
   anywhere; Ctrl-C kills mid-apply with no resumability note and can't cancel in-flight
   HTTP. Adopt first in the `task run --wait` poll loop and the apply executor loop.
-- **4.5 `internal/output` calls `os.Exit(1)`** (`json.go:15`, `yaml.go:16`) — return errors
-  and let `RunE` propagate.
 
 ---
 
@@ -148,7 +126,7 @@ Still pending:
 
 - `task run` form (template select from API, message, git_branch, debug/dry_run/diff toggles)
 - Update commands: optionally launch a pre-filled form when no `field=value` args are given
-- See 3.6 for form quality improvements (API-driven selects, coverage notes)
+- See 3.4 for form quality improvements (API-driven selects, coverage notes)
 
 ---
 

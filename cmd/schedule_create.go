@@ -75,7 +75,7 @@ var scheduleCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created schedule %q (ID: %d)", s.Name, s.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(s, nil, nil)
+			return output.Print(s, nil, nil)
 		}
 		return nil
 	},

@@ -49,14 +49,15 @@ func DisableColor() {
 // Print outputs data in the current format.
 // For table format, headers and rows are used.
 // For JSON/YAML, data is serialized directly.
-func Print(data interface{}, headers []string, rows [][]string) {
+func Print(data interface{}, headers []string, rows [][]string) error {
 	switch currentFormat {
 	case FormatJSON:
-		PrintJSON(normalizeNilSlice(data))
+		return PrintJSON(normalizeNilSlice(data))
 	case FormatYAML:
-		PrintYAML(normalizeNilSlice(data))
+		return PrintYAML(normalizeNilSlice(data))
 	default:
 		PrintTable(headers, rows)
+		return nil
 	}
 }
 

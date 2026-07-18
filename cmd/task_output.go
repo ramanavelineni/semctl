@@ -44,8 +44,7 @@ var taskOutputCmd = &cobra.Command{
 		items := resp.GetPayload()
 
 		if output.GetFormat() != output.FormatTable {
-			output.Print(items, nil, nil)
-			return nil
+			return output.Print(items, nil, nil)
 		}
 
 		for _, line := range items {

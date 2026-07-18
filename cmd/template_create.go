@@ -127,7 +127,7 @@ var templateCreateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Created template %q (ID: %d)", t.Name, t.ID))
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
-			output.Print(t, nil, nil)
+			return output.Print(t, nil, nil)
 		}
 		return nil
 	},

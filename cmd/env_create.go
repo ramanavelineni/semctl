@@ -78,7 +78,7 @@ var envCreateCmd = &cobra.Command{
 		// Machine-readable resource on stdout so pipelines can capture the ID.
 		if output.GetFormat() != output.FormatTable {
 			e.Password = "" // never echo the submitted secret
-			output.Print(e, nil, nil)
+			return output.Print(e, nil, nil)
 		}
 		return nil
 	},
