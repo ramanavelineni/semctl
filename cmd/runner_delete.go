@@ -7,13 +7,13 @@ import (
 )
 
 var runnerDeleteCmd = &cobra.Command{
-	Use:     "delete <id>",
+	Use:     "delete <id|name>",
 	Aliases: []string{"rm"},
 	Short:   "Delete a runner",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl runner delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "runner")
+		id, err := resolveIDOrName(cmd, args[0], "runner", runnerNameIDs)
 		if err != nil {
 			return err
 		}

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/output"
@@ -13,15 +12,15 @@ import (
 )
 
 var runnerTokenCmd = &cobra.Command{
-	Use:     "token <id>",
+	Use:     "token <id|name>",
 	Short:   "Generate a new registration token for a runner",
 	Long:    `Generate a new registration token, replacing the previous one.`,
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl runner token 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "runner", runnerNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid runner ID: %w", err)
+			return err
 		}
 
 		pid, projectScoped, err := runnerScope(cmd)

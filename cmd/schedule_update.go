@@ -15,14 +15,14 @@ import (
 )
 
 var scheduleUpdateCmd = &cobra.Command{
-	Use:   "update <id> [field=value...]",
+	Use:   "update <id|name> [field=value...]",
 	Short: "Update a schedule",
 	Long:  `Update a schedule. Fields: name, template_id, cron_format, active, type, run_at.`,
 	Args:  cobra.MinimumNArgs(1),
 	Example: `  semctl schedule update 1 cron_format="0 4 * * *"
   semctl schedule update 1 active=false name="Paused nightly"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "schedule")
+		id, err := resolveIDOrName(cmd, args[0], "schedule", scheduleNameIDs)
 		if err != nil {
 			return err
 		}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,16 +13,34 @@ import (
 )
 
 func TestCompleteUpdateFields(t *testing.T) {
-	fn := completeUpdateFields(true, "name", "cron_format", "active")
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfg, []byte("current_context: default\ncontexts:\n  default:\n    server: {host: localhost}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &cobra.Command{}
+	cmd.Flags().String("config", cfg, "")
+	t.Cleanup(func() { _ = config.Load("") }) // restore global config state
 
-	// ID position: no completions, no file fallback.
-	out, directive := fn(nil, nil, "")
-	if out != nil || directive != cobra.ShellCompDirectiveNoFileComp {
+	noNames := func(*cobra.Command) ([]nameID, error) { return nil, errors.New("server unreachable") }
+	oneName := func(*cobra.Command) ([]nameID, error) { return []nameID{{ID: 7, Name: "Nightly"}}, nil }
+
+	fn := completeUpdateFields(noNames, true, "name", "cron_format", "active")
+
+	// ID position with an unreachable server: no completions, no file fallback.
+	out, directive := fn(cmd, nil, "")
+	if len(out) != 0 || directive != cobra.ShellCompDirectiveNoFileComp {
 		t.Errorf("ID position: got %v (%v)", out, directive)
 	}
 
+	// ID position with a reachable server: resource names complete.
+	fnNames := completeUpdateFields(oneName, true, "name")
+	if out, _ := fnNames(cmd, nil, ""); len(out) != 1 || out[0] != "Nightly\tID 7" {
+		t.Errorf("ID position names: got %v", out)
+	}
+
 	// Field position: names with '=' and no trailing space.
-	out, directive = fn(nil, []string{"5"}, "")
+	out, directive = fn(cmd, []string{"5"}, "")
 	if len(out) != 3 || out[0] != "name=" {
 		t.Errorf("field position: got %v", out)
 	}
@@ -30,19 +49,19 @@ func TestCompleteUpdateFields(t *testing.T) {
 	}
 
 	// Boolean value side.
-	out, _ = fn(nil, []string{"5"}, "active=")
+	out, _ = fn(cmd, []string{"5"}, "active=")
 	if len(out) != 2 || out[0] != "active=true" || out[1] != "active=false" {
 		t.Errorf("bool value: got %v", out)
 	}
 
 	// Non-boolean value side: nothing.
-	if out, _ := fn(nil, []string{"5"}, "name="); out != nil {
+	if out, _ := fn(cmd, []string{"5"}, "name="); out != nil {
 		t.Errorf("string value: got %v, want nil", out)
 	}
 
-	// project update shape: fields from position 0.
-	fn0 := completeUpdateFields(false, "name")
-	if out, _ := fn0(nil, nil, ""); len(out) != 1 || out[0] != "name=" {
+	// project update shape: fields AND names from position 0.
+	fn0 := completeUpdateFields(oneName, false, "name")
+	if out, _ := fn0(cmd, nil, ""); len(out) != 2 || out[0] != "name=" || out[1] != "Nightly\tID 7" {
 		t.Errorf("no-ID shape: got %v", out)
 	}
 }

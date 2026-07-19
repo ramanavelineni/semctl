@@ -10,12 +10,13 @@ import (
 )
 
 var templateShowCmd = &cobra.Command{
-	Use:     "show <id>",
-	Short:   "Show template details",
-	Args:    cobra.ExactArgs(1),
-	Example: "  semctl template show 1",
+	Use:   "show <id|name>",
+	Short: "Show template details",
+	Args:  cobra.ExactArgs(1),
+	Example: `  semctl template show 1
+  semctl template show "Deploy App"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "template")
+		id, err := resolveIDOrName(cmd, args[0], "template", templateNameIDs)
 		if err != nil {
 			return err
 		}

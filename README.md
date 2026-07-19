@@ -179,11 +179,19 @@ credentials.
 All list/show commands support table, JSON, and YAML output:
 
 ```bash
-semctl project list              # table (default)
-semctl project list --json       # JSON
-semctl project list --yaml       # YAML
-semctl project show 1 --json     # single resource as JSON
+semctl project list                  # table (default)
+semctl project list --output json    # JSON (--json is a shorthand)
+semctl project list --yaml           # YAML (short for --output yaml)
+semctl project show 1 --json         # single resource as JSON
 ```
+
+Passing two different formats at once is an error. `export` is the one
+exception: its `-f/--file` flag names the output *file* and the format comes
+from `--json`/`--yaml` or the file extension.
+
+Positional resource arguments accept a name as well as an ID — `semctl
+template show Deploy` and `semctl template show 5` are equivalent (names
+resolve case-insensitively; ambiguous names error and list the matching IDs).
 
 ## Configuration
 
@@ -234,8 +242,9 @@ Precedence: command-line flags > environment variables > config file.
     --timeout duration  HTTP request timeout (default 30s)
     --insecure          skip TLS certificate verification (not recommended)
     --ca-cert string    path to a CA certificate for TLS verification
-    --json              output as JSON
-    --yaml              output as YAML
+    --output string     output format: table, json, or yaml
+    --json              output as JSON (same as --output json)
+    --yaml              output as YAML (same as --output yaml)
     --no-color          disable colored output
 -y, --yes               auto-confirm prompts
 ```

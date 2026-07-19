@@ -13,7 +13,7 @@ import (
 )
 
 var userUpdateCmd = &cobra.Command{
-	Use:   "update <id> <field=value>...",
+	Use:   "update <id|username> <field=value>...",
 	Short: "Update a user",
 	Long: `Update user fields using field=value pairs.
 
@@ -22,9 +22,9 @@ Supported fields: username, name, email, admin, alert`,
 	Example: `  semctl user update 2 name="Jane Doe"
   semctl user update 2 admin=true alert=false`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "user", userNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid user ID: %w", err)
+			return err
 		}
 		if len(args) < 2 {
 			return fmt.Errorf("no fields to update — provide field=value pairs")

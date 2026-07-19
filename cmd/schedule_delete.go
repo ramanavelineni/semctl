@@ -7,13 +7,13 @@ import (
 )
 
 var scheduleDeleteCmd = &cobra.Command{
-	Use:     "delete <id>",
+	Use:     "delete <id|name>",
 	Aliases: []string{"rm"},
 	Short:   "Delete a schedule",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl schedule delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "schedule")
+		id, err := resolveIDOrName(cmd, args[0], "schedule", scheduleNameIDs)
 		if err != nil {
 			return err
 		}

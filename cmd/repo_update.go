@@ -13,16 +13,16 @@ import (
 )
 
 var repoUpdateCmd = &cobra.Command{
-	Use:   "update <id> [field=value...]",
+	Use:   "update <id|name> [field=value...]",
 	Short: "Update a repository",
 	Long:  `Update a repository. Fields: name, git_url, git_branch, ssh_key_id.`,
 	Args:  cobra.MinimumNArgs(1),
 	Example: `  semctl repo update 1 name="Renamed Repo"
   semctl repo update 2 git_branch=develop ssh_key_id=3`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "repository", repoNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid repository ID: %w", err)
+			return err
 		}
 
 		pid, err := getProjectID(cmd)

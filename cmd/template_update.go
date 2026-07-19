@@ -14,7 +14,7 @@ import (
 )
 
 var templateUpdateCmd = &cobra.Command{
-	Use:   "update <id> [field=value...]",
+	Use:   "update <id|name> [field=value...]",
 	Short: "Update a template",
 	Long:  `Update a template. Fields: name, description, type, app, playbook, git_branch, arguments, repository_id, environment_id, inventory_id, build_template_id, view_id, autorun, suppress_success_alerts.`,
 	Args:  cobra.MinimumNArgs(1),
@@ -22,9 +22,9 @@ var templateUpdateCmd = &cobra.Command{
   semctl template update 5 playbook=deploy.yml git_branch=main
   semctl template update 3 autorun=true`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "template", templateNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid template ID: %w", err)
+			return err
 		}
 
 		pid, err := getProjectID(cmd)

@@ -18,6 +18,48 @@ func TestParseIDArg(t *testing.T) {
 	}
 }
 
+func TestResolveIDOrName(t *testing.T) {
+	list := func(*cobra.Command) ([]nameID, error) {
+		return []nameID{{ID: 1, Name: "Deploy"}, {ID: 2, Name: "backup"}, {ID: 3, Name: "Backup"}}, nil
+	}
+
+	// Numeric input never hits the API.
+	id, err := resolveIDOrName(nil, "42", "widget", func(*cobra.Command) ([]nameID, error) {
+		t.Fatal("list called for numeric arg")
+		return nil, nil
+	})
+	if err != nil || id != 42 {
+		t.Errorf("numeric: got %d, %v", id, err)
+	}
+
+	// Case-insensitive unique name.
+	if id, err := resolveIDOrName(nil, "deploy", "widget", list); err != nil || id != 1 {
+		t.Errorf("name: got %d, %v", id, err)
+	}
+
+	// Unknown name: not-found error carrying exit code 4.
+	_, err = resolveIDOrName(nil, "missing", "widget", list)
+	if err == nil || !strings.Contains(err.Error(), `widget "missing" not found`) {
+		t.Errorf("not found: got %v", err)
+	}
+	if code := exitCodeFor(err); code != exitNotFound {
+		t.Errorf("not-found exit code = %d, want %d", code, exitNotFound)
+	}
+
+	// Duplicate names (case-insensitively) are ambiguous, listing the IDs.
+	_, err = resolveIDOrName(nil, "BACKUP", "widget", list)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "2, 3") {
+		t.Errorf("ambiguous: got %v", err)
+	}
+
+	// List errors pass through untouched (auth sentinels must survive).
+	sentinel := errors.New("boom")
+	_, err = resolveIDOrName(nil, "x", "widget", func(*cobra.Command) ([]nameID, error) { return nil, sentinel })
+	if !errors.Is(err, sentinel) {
+		t.Errorf("list error: got %v, want wrapped sentinel", err)
+	}
+}
+
 func TestRunList_WrapsFetchError(t *testing.T) {
 	err := runList("widgets", []string{"ID"},
 		func() ([]string, error) { return nil, errors.New("boom") },

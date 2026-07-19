@@ -27,11 +27,11 @@ the cache-dir home error. Remaining items:
 
 ## 3. UX Polish
 
-- **3.1 Remaining consistency decisions.** Name resolution in positional args
-  (`project show myproj`) and a unified `--output table|json|yaml` flag (today
-  `--json --yaml` silently picks JSON; note `export -o` means *file*). The mechanical
-  items (positional ID for project update, kebab-case field=value, standardized
-  update-arg validation, usage brackets) shipped in polish batch A.
+The consistency decisions (3.1) shipped on feat/positional-names-output-flag:
+positional args accept names everywhere (`project show myproj`), and a global
+`--output table|json|yaml` flag unifies formats (conflicting formats now
+error; `export` grew `-f/--file` with `-o/--output` deprecated). Remaining:
+
 - **3.2 Form improvements:** populate repository/inventory/environment selects from the API
   in `template create` (the two-stage `key create` form is the pattern to copy); note in
   forms that more options exist as flags; add a form to `task run`; optional pre-filled
@@ -76,4 +76,4 @@ Still pending:
 
 ## Suggested Order
 
-1. The rest of §1/§2/§3/§4/§5 opportunistically — no single item is blocking.
+1. The rest of §1/§3/§4/§5 opportunistically — no single item is blocking.

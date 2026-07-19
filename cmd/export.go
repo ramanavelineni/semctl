@@ -21,7 +21,7 @@ var exportCmd = &cobra.Command{
 The exported file can be edited and re-applied with 'semctl apply'.
 Secrets (SSH keys, passwords) are replaced with "<set-me>" placeholders.
 Schedules are not exported (no list API).`,
-	Example: `  semctl export -p 1 -o project.yaml
+	Example: `  semctl export -p 1 -f project.yaml
   semctl export -p 1 --json
   semctl export -p 1 --only keys,templates`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -30,7 +30,11 @@ Schedules are not exported (no list API).`,
 			return err
 		}
 
-		outputFile, _ := cmd.Flags().GetString("output")
+		outputFile, _ := cmd.Flags().GetString("file")
+		if outputFile == "" {
+			// Deprecated spelling; local --output shadows the global format flag.
+			outputFile, _ = cmd.Flags().GetString("output")
+		}
 		onlyFlag, _ := cmd.Flags().GetString("only")
 		jsonFlag, _ := cmd.Flags().GetBool("json")
 		yamlFlag, _ := cmd.Flags().GetBool("yaml")
@@ -99,6 +103,8 @@ Schedules are not exported (no list API).`,
 func init() {
 	rootCmd.AddCommand(exportCmd)
 
-	exportCmd.Flags().StringP("output", "o", "", "output file path (auto-detects format from extension)")
+	exportCmd.Flags().StringP("file", "f", "", "output file path (auto-detects format from extension)")
+	exportCmd.Flags().StringP("output", "o", "", "output file path")
+	_ = exportCmd.Flags().MarkDeprecated("output", "use -f/--file instead")
 	exportCmd.Flags().String("only", "", "export only specific resource types (comma-separated: keys,variable_groups,repositories,inventories,templates)")
 }

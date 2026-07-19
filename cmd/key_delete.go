@@ -7,13 +7,13 @@ import (
 )
 
 var keyDeleteCmd = &cobra.Command{
-	Use:     "delete <id>",
+	Use:     "delete <id|name>",
 	Aliases: []string{"rm"},
 	Short:   "Delete an access key",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl key delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "key")
+		id, err := resolveIDOrName(cmd, args[0], "key", keyNameIDs)
 		if err != nil {
 			return err
 		}

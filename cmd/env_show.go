@@ -11,12 +11,12 @@ import (
 )
 
 var envShowCmd = &cobra.Command{
-	Use:     "show <id>",
+	Use:     "show <id|name>",
 	Short:   "Show environment details",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl env show 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "environment")
+		id, err := resolveIDOrName(cmd, args[0], "environment", envNameIDs)
 		if err != nil {
 			return err
 		}

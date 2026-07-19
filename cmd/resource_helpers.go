@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/output"
@@ -17,6 +18,51 @@ func parseIDArg(arg, what string) (int64, error) {
 		return 0, fmt.Errorf("invalid %s ID: %w", what, err)
 	}
 	return id, nil
+}
+
+// nameID is one row of a resource listing, enough to resolve a name to an ID
+// and to complete positional arguments (see cmd/resolve.go for the fetchers).
+type nameID struct {
+	ID   int64
+	Name string
+}
+
+// resolveIDOrName turns a positional resource argument into an ID: numeric
+// input is used as-is, anything else resolves as a case-insensitive name via
+// list. what is singular.
+func resolveIDOrName(cmd *cobra.Command, arg, what string, list func(*cobra.Command) ([]nameID, error)) (int64, error) {
+	if id, err := strconv.ParseInt(arg, 10, 64); err == nil {
+		return id, nil
+	}
+	items, err := list(cmd)
+	if err != nil {
+		return 0, err
+	}
+	return matchNameID(items, arg, what)
+}
+
+// matchNameID finds the single item named name (case-insensitive). Duplicate
+// names are possible server-side (schedules especially), so multiple matches
+// are an error rather than a silent first-wins pick.
+func matchNameID(items []nameID, name, what string) (int64, error) {
+	var matches []nameID
+	for _, it := range items {
+		if strings.EqualFold(it.Name, name) {
+			matches = append(matches, it)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0].ID, nil
+	case 0:
+		return 0, withExitCode(fmt.Errorf("%s %q not found", what, name), exitNotFound)
+	default:
+		ids := make([]string, len(matches))
+		for i, m := range matches {
+			ids[i] = strconv.FormatInt(m.ID, 10)
+		}
+		return 0, fmt.Errorf("%s name %q is ambiguous (IDs %s) — use a numeric ID", what, name, strings.Join(ids, ", "))
+	}
 }
 
 // runList executes the shared list-command flow: fetch, machine-readable
