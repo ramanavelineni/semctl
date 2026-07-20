@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -156,14 +157,15 @@ CI pipelines that need to gate on task success.`,
 			return nil
 		}
 
-		return waitForTask(apiClient, int64(pid), t.ID, follow, waitTimeout)
+		return waitForTask(cmd.Context(), apiClient, int64(pid), t.ID, follow, waitTimeout)
 	},
 }
 
 // waitForTask polls a task until it reaches a terminal status. With follow,
 // new output lines are streamed to stdout as they appear. A non-success
 // terminal status is returned as an error so the process exits non-zero.
-func waitForTask(apiClient *apiclientpkg.Semapi, projectID, taskID int64, follow bool, waitTimeout time.Duration) error {
+// Ctrl-C cancels ctx: the wait stops, but the task keeps running server-side.
+func waitForTask(ctx context.Context, apiClient *apiclientpkg.Semapi, projectID, taskID int64, follow bool, waitTimeout time.Duration) error {
 	deadline := time.Time{}
 	if waitTimeout > 0 {
 		deadline = time.Now().Add(waitTimeout)
@@ -173,8 +175,11 @@ func waitForTask(apiClient *apiclientpkg.Semapi, projectID, taskID int64, follow
 	consecutiveErrors := 0
 
 	for {
-		status, err := fetchTaskStatus(apiClient, projectID, taskID)
+		status, err := fetchTaskStatus(ctx, apiClient, projectID, taskID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return taskWaitInterrupted(taskID)
+			}
 			// Tolerate transient poll failures (network blips, restarts).
 			consecutiveErrors++
 			if consecutiveErrors >= 3 {
@@ -184,7 +189,7 @@ func waitForTask(apiClient *apiclientpkg.Semapi, projectID, taskID int64, follow
 			consecutiveErrors = 0
 
 			if follow {
-				printed = printNewTaskOutput(apiClient, projectID, taskID, printed)
+				printed = printNewTaskOutput(ctx, apiClient, projectID, taskID, printed)
 			}
 
 			switch status {
@@ -200,16 +205,24 @@ func waitForTask(apiClient *apiclientpkg.Semapi, projectID, taskID int64, follow
 			return withExitCode(fmt.Errorf("timed out after %s waiting for task %d (task is still running server-side)", waitTimeout, taskID), exitWaitTimeout)
 		}
 
-		time.Sleep(taskPollInterval)
+		select {
+		case <-ctx.Done():
+			return taskWaitInterrupted(taskID)
+		case <-time.After(taskPollInterval):
+		}
 	}
 }
 
-func fetchTaskStatus(apiClient *apiclientpkg.Semapi, projectID, taskID int64) (string, error) {
+func taskWaitInterrupted(taskID int64) error {
+	return withExitCode(fmt.Errorf("interrupted while waiting; task %d keeps running server-side — check it with 'semctl task show %d' or stop it with 'semctl task stop %d'", taskID, taskID, taskID), exitCancelled)
+}
+
+func fetchTaskStatus(ctx context.Context, apiClient *apiclientpkg.Semapi, projectID, taskID int64) (string, error) {
 	params := task.NewGetProjectProjectIDTasksTaskIDParams()
 	params.ProjectID = projectID
 	params.TaskID = taskID
 
-	resp, err := apiClient.Task.GetProjectProjectIDTasksTaskID(params, nil)
+	resp, err := apiClient.Task.GetProjectProjectIDTasksTaskIDContext(ctx, params, nil)
 	if err != nil {
 		return "", err
 	}
@@ -219,12 +232,12 @@ func fetchTaskStatus(apiClient *apiclientpkg.Semapi, projectID, taskID int64) (s
 // printNewTaskOutput fetches the task output and prints any lines beyond
 // alreadyPrinted, returning the new count. Fetch errors are ignored — the
 // next poll retries.
-func printNewTaskOutput(apiClient *apiclientpkg.Semapi, projectID, taskID int64, alreadyPrinted int) int {
+func printNewTaskOutput(ctx context.Context, apiClient *apiclientpkg.Semapi, projectID, taskID int64, alreadyPrinted int) int {
 	params := task.NewGetProjectProjectIDTasksTaskIDOutputParams()
 	params.ProjectID = projectID
 	params.TaskID = taskID
 
-	resp, err := apiClient.Task.GetProjectProjectIDTasksTaskIDOutput(params, nil)
+	resp, err := apiClient.Task.GetProjectProjectIDTasksTaskIDOutputContext(ctx, params, nil)
 	if err != nil {
 		return alreadyPrinted
 	}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -29,8 +30,27 @@ func confirmAction(cmd *cobra.Command, prompt string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
+	// Read on a goroutine so Ctrl-C (which cancels the command context but
+	// cannot unblock a stdin read) aborts the prompt immediately. The reader
+	// goroutine leaks on cancellation; the process is about to exit anyway.
+	lines := make(chan string, 1)
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		lines <- response
+	}()
+
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var response string
+	select {
+	case <-ctx.Done():
+		fmt.Fprintln(os.Stderr)
+		return errCancelled
+	case response = <-lines:
+	}
 	response = strings.TrimSpace(strings.ToLower(response))
 	if response != "y" && response != "yes" {
 		return errCancelled

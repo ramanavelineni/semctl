@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -68,6 +69,25 @@ func SetTimeout(d time.Duration) {
 	if d > 0 {
 		requestTimeout = d
 	}
+}
+
+// rootCtx is the session context, cancelled on Ctrl-C/SIGTERM. It becomes
+// the transport-level default for every API call, so an interrupt cancels
+// in-flight HTTP even in commands that don't thread a context themselves.
+var rootCtx context.Context
+
+// SetRootContext installs the session context on clients built afterwards.
+func SetRootContext(ctx context.Context) {
+	rootCtx = ctx
+}
+
+// sessionCtx returns the session context for raw net/http requests that
+// bypass the swagger transport (login, token revocation).
+func sessionCtx() context.Context {
+	if rootCtx != nil {
+		return rootCtx
+	}
+	return context.Background()
 }
 
 // SetInsecureSkipVerify disables TLS certificate verification for the session.
@@ -320,7 +340,12 @@ func LoginAndCreateToken(serverURL, username, password string) (string, error) {
 		"password": password,
 	})
 
-	loginResp, err := httpClient.Post(serverURL+"/auth/login", "application/json", bytes.NewReader(loginBody))
+	loginReq, err := http.NewRequestWithContext(sessionCtx(), http.MethodPost, serverURL+"/auth/login", bytes.NewReader(loginBody))
+	if err != nil {
+		return "", err
+	}
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp, err := httpClient.Do(loginReq)
 	if err != nil {
 		// Raw net/http path — translate here since it bypasses the
 		// swagger transport hook.
@@ -336,7 +361,12 @@ func LoginAndCreateToken(serverURL, username, password string) (string, error) {
 	}
 
 	// Step 2: Create API token using the session cookie
-	tokenResp, err := httpClient.Post(serverURL+"/user/tokens", "application/json", nil)
+	tokenReq, err := http.NewRequestWithContext(sessionCtx(), http.MethodPost, serverURL+"/user/tokens", nil)
+	if err != nil {
+		return "", err
+	}
+	tokenReq.Header.Set("Content-Type", "application/json")
+	tokenResp, err := httpClient.Do(tokenReq)
 	if err != nil {
 		return "", fmt.Errorf("token creation request failed: %w", err)
 	}
@@ -367,7 +397,7 @@ func RevokeToken(serverURL, token string) error {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, serverURL+"/user/tokens/"+token, nil)
+	req, err := http.NewRequestWithContext(sessionCtx(), http.MethodDelete, serverURL+"/user/tokens/"+token, nil)
 	if err != nil {
 		return err
 	}

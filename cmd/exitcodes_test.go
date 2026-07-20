@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -25,6 +26,7 @@ func TestExitCodeFor(t *testing.T) {
 		{"nil", nil, exitOK},
 		{"generic", errors.New("boom"), exitError},
 		{"cancelled wrapped", fmt.Errorf("wrapped: %w", errCancelled), exitCancelled},
+		{"context cancelled", fmt.Errorf("interrupted: %w", context.Canceled), exitCancelled},
 		{"explicit code", withExitCode(errors.New("drift"), exitDrift), exitDrift},
 		{"explicit task failed", withExitCode(errors.New("task"), exitTaskFailed), exitTaskFailed},
 		{"no credentials", fmt.Errorf("auth: %w", client.ErrNoCredentials), exitAuth},

@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -18,10 +19,11 @@ import (
 
 // Executor applies planned changes to Semaphore.
 type Executor struct {
-	client   *apiclient.Semapi
-	config   *ApplyConfig
-	recon    *Reconciler
-	failFast bool
+	client          *apiclient.Semapi
+	config          *ApplyConfig
+	recon           *Reconciler
+	failFast        bool
+	warnedInterrupt bool
 }
 
 // SetFailFast makes Execute stop at the first error instead of continuing
@@ -40,7 +42,10 @@ func NewExecutor(client *apiclient.Semapi, config *ApplyConfig, recon *Reconcile
 }
 
 // Execute applies all planned actions and returns the number of errors.
-func (e *Executor) Execute(plan *Plan) int {
+// Cancelling ctx (Ctrl-C) stops before the next action; the in-flight HTTP
+// request is cancelled too. Already-applied changes remain — re-running
+// apply resumes reconciliation.
+func (e *Executor) Execute(ctx context.Context, plan *Plan) int {
 	errors := 0
 
 	// Create/update order: project → keys → envs → repos → inventories → templates → schedules
@@ -57,7 +62,13 @@ func (e *Executor) Execute(plan *Plan) int {
 	for _, rt := range createOrder {
 		for _, action := range plan.ActionsByType(rt) {
 			if action.Action == ActionCreate || action.Action == ActionUpdate {
-				if err := e.executeAction(action); err != nil {
+				if e.interrupted(ctx) {
+					return errors
+				}
+				if err := e.executeAction(ctx, action); err != nil {
+					if e.interrupted(ctx) {
+						return errors
+					}
 					style.Error(fmt.Sprintf("Failed to %s %s %q: %v", action.Action, action.Type, action.Label, err))
 					errors++
 					if e.failFast {
@@ -83,7 +94,13 @@ func (e *Executor) Execute(plan *Plan) int {
 	for _, rt := range deleteOrder {
 		for _, action := range plan.ActionsByType(rt) {
 			if action.Action == ActionDelete {
-				if err := e.executeAction(action); err != nil {
+				if e.interrupted(ctx) {
+					return errors
+				}
+				if err := e.executeAction(ctx, action); err != nil {
+					if e.interrupted(ctx) {
+						return errors
+					}
 					style.Error(fmt.Sprintf("Failed to delete %s %q: %v", action.Type, action.Label, err))
 					errors++
 					if e.failFast {
@@ -98,28 +115,42 @@ func (e *Executor) Execute(plan *Plan) int {
 	return errors
 }
 
-func (e *Executor) executeAction(action ResourceAction) error {
+// interrupted reports whether ctx was cancelled, warning once about the
+// partially reconciled state. An action failing because its HTTP request was
+// cancelled is not counted as an apply error.
+func (e *Executor) interrupted(ctx context.Context) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	if !e.warnedInterrupt {
+		e.warnedInterrupt = true
+		style.Warning("Interrupted — stopping apply. Changes already applied remain; re-running apply resumes reconciliation.")
+	}
+	return true
+}
+
+func (e *Executor) executeAction(ctx context.Context, action ResourceAction) error {
 	switch action.Type {
 	case ResourceProject:
-		return e.executeProject(action)
+		return e.executeProject(ctx, action)
 	case ResourceKey:
-		return e.executeKey(action)
+		return e.executeKey(ctx, action)
 	case ResourceVariableGroup:
-		return e.executeVariableGroup(action)
+		return e.executeVariableGroup(ctx, action)
 	case ResourceRepository:
-		return e.executeRepository(action)
+		return e.executeRepository(ctx, action)
 	case ResourceInventory:
-		return e.executeInventory(action)
+		return e.executeInventory(ctx, action)
 	case ResourceTemplate:
-		return e.executeTemplate(action)
+		return e.executeTemplate(ctx, action)
 	case ResourceSchedule:
-		return e.executeSchedule(action)
+		return e.executeSchedule(ctx, action)
 	default:
 		return fmt.Errorf("unknown resource type: %s", action.Type)
 	}
 }
 
-func (e *Executor) executeProject(action ResourceAction) error {
+func (e *Executor) executeProject(ctx context.Context, action ResourceAction) error {
 	switch action.Action {
 	case ActionCreate:
 		req := &models.ProjectRequest{
@@ -129,7 +160,7 @@ func (e *Executor) executeProject(action ResourceAction) error {
 		params := project.NewPostProjectsParams()
 		params.Project = req
 
-		resp, err := e.client.Project.PostProjects(params, nil)
+		resp, err := e.client.Project.PostProjectsContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -142,7 +173,7 @@ func (e *Executor) executeProject(action ResourceAction) error {
 		params := project.NewDeleteProjectProjectIDParams()
 		params.ProjectID = action.ExistingID
 
-		_, err := e.client.Project.DeleteProjectProjectID(params, nil)
+		_, err := e.client.Project.DeleteProjectProjectIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -151,7 +182,7 @@ func (e *Executor) executeProject(action ResourceAction) error {
 	return nil
 }
 
-func (e *Executor) executeKey(action ResourceAction) error {
+func (e *Executor) executeKey(ctx context.Context, action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	// Deletes must not touch the config: project-deletion plans reference
@@ -161,7 +192,7 @@ func (e *Executor) executeKey(action ResourceAction) error {
 		params.ProjectID = pid
 		params.KeyID = action.ExistingID
 
-		_, err := e.client.KeyStore.DeleteProjectProjectIDKeysKeyID(params, nil)
+		_, err := e.client.KeyStore.DeleteProjectProjectIDKeysKeyIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -184,7 +215,7 @@ func (e *Executor) executeKey(action ResourceAction) error {
 		params.ProjectID = pid
 		params.AccessKey = req
 
-		resp, err := e.client.KeyStore.PostProjectProjectIDKeys(params, nil)
+		resp, err := e.client.KeyStore.PostProjectProjectIDKeysContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -208,7 +239,7 @@ func (e *Executor) executeKey(action ResourceAction) error {
 		params.KeyID = action.ExistingID
 		params.AccessKey = req
 
-		_, err := e.client.KeyStore.PutProjectProjectIDKeysKeyID(params, nil)
+		_, err := e.client.KeyStore.PutProjectProjectIDKeysKeyIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -237,7 +268,7 @@ func (e *Executor) applyKeySecrets(req *models.AccessKeyRequest, entry KeyEntry)
 	}
 }
 
-func (e *Executor) executeVariableGroup(action ResourceAction) error {
+func (e *Executor) executeVariableGroup(ctx context.Context, action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	switch action.Action {
@@ -255,7 +286,7 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 		params.ProjectID = pid
 		params.Environment = req
 
-		resp, err := e.client.VariableGroup.PostProjectProjectIDEnvironment(params, nil)
+		resp, err := e.client.VariableGroup.PostProjectProjectIDEnvironmentContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -271,7 +302,7 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 		getParams := variable_group.NewGetProjectProjectIDEnvironmentEnvironmentIDParams()
 		getParams.ProjectID = pid
 		getParams.EnvironmentID = action.ExistingID
-		getResp, err := e.client.VariableGroup.GetProjectProjectIDEnvironmentEnvironmentID(getParams, nil)
+		getResp, err := e.client.VariableGroup.GetProjectProjectIDEnvironmentEnvironmentIDContext(ctx, getParams, nil)
 		if err != nil {
 			return fmt.Errorf("fetching existing variable group: %w", err)
 		}
@@ -291,7 +322,7 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 		putParams.EnvironmentID = action.ExistingID
 		putParams.Environment = req
 
-		_, err = e.client.VariableGroup.PutProjectProjectIDEnvironmentEnvironmentID(putParams, nil)
+		_, err = e.client.VariableGroup.PutProjectProjectIDEnvironmentEnvironmentIDContext(ctx, putParams, nil)
 		if err != nil {
 			return err
 		}
@@ -302,7 +333,7 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 		params.ProjectID = pid
 		params.EnvironmentID = action.ExistingID
 
-		_, err := e.client.VariableGroup.DeleteProjectProjectIDEnvironmentEnvironmentID(params, nil)
+		_, err := e.client.VariableGroup.DeleteProjectProjectIDEnvironmentEnvironmentIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -311,7 +342,7 @@ func (e *Executor) executeVariableGroup(action ResourceAction) error {
 	return nil
 }
 
-func (e *Executor) executeRepository(action ResourceAction) error {
+func (e *Executor) executeRepository(ctx context.Context, action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	if action.Action == ActionDelete {
@@ -319,7 +350,7 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 		params.ProjectID = pid
 		params.RepositoryID = action.ExistingID
 
-		_, err := e.client.Repository.DeleteProjectProjectIDRepositoriesRepositoryID(params, nil)
+		_, err := e.client.Repository.DeleteProjectProjectIDRepositoriesRepositoryIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -347,7 +378,7 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 		params.ProjectID = pid
 		params.Repository = req
 
-		resp, err := e.client.Repository.PostProjectProjectIDRepositories(params, nil)
+		resp, err := e.client.Repository.PostProjectProjectIDRepositoriesContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -378,7 +409,7 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 		params.RepositoryID = action.ExistingID
 		params.Repository = req
 
-		_, err := e.client.Repository.PutProjectProjectIDRepositoriesRepositoryID(params, nil)
+		_, err := e.client.Repository.PutProjectProjectIDRepositoriesRepositoryIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -387,7 +418,7 @@ func (e *Executor) executeRepository(action ResourceAction) error {
 	return nil
 }
 
-func (e *Executor) executeInventory(action ResourceAction) error {
+func (e *Executor) executeInventory(ctx context.Context, action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	if action.Action == ActionDelete {
@@ -395,7 +426,7 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 		params.ProjectID = pid
 		params.InventoryID = action.ExistingID
 
-		_, err := e.client.Inventory.DeleteProjectProjectIDInventoryInventoryID(params, nil)
+		_, err := e.client.Inventory.DeleteProjectProjectIDInventoryInventoryIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -433,7 +464,7 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 		params.ProjectID = pid
 		params.Inventory = req
 
-		resp, err := e.client.Inventory.PostProjectProjectIDInventory(params, nil)
+		resp, err := e.client.Inventory.PostProjectProjectIDInventoryContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -466,7 +497,7 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 		params.InventoryID = action.ExistingID
 		params.Inventory = req
 
-		_, err := e.client.Inventory.PutProjectProjectIDInventoryInventoryID(params, nil)
+		_, err := e.client.Inventory.PutProjectProjectIDInventoryInventoryIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -475,7 +506,7 @@ func (e *Executor) executeInventory(action ResourceAction) error {
 	return nil
 }
 
-func (e *Executor) executeTemplate(action ResourceAction) error {
+func (e *Executor) executeTemplate(ctx context.Context, action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	if action.Action == ActionDelete {
@@ -483,7 +514,7 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 		params.ProjectID = pid
 		params.TemplateID = action.ExistingID
 
-		_, err := e.client.Template.DeleteProjectProjectIDTemplatesTemplateID(params, nil)
+		_, err := e.client.Template.DeleteProjectProjectIDTemplatesTemplateIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -536,7 +567,7 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 		params.ProjectID = pid
 		params.Template = req
 
-		resp, err := e.client.Template.PostProjectProjectIDTemplates(params, nil)
+		resp, err := e.client.Template.PostProjectProjectIDTemplatesContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -590,7 +621,7 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 		params.TemplateID = action.ExistingID
 		params.Template = req
 
-		_, err := e.client.Template.PutProjectProjectIDTemplatesTemplateID(params, nil)
+		_, err := e.client.Template.PutProjectProjectIDTemplatesTemplateIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -599,7 +630,7 @@ func (e *Executor) executeTemplate(action ResourceAction) error {
 	return nil
 }
 
-func (e *Executor) executeSchedule(action ResourceAction) error {
+func (e *Executor) executeSchedule(ctx context.Context, action ResourceAction) error {
 	pid := e.recon.ProjectID()
 
 	if action.Action == ActionDelete {
@@ -607,7 +638,7 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 		params.ProjectID = pid
 		params.ScheduleID = action.ExistingID
 
-		_, err := e.client.Schedule.DeleteProjectProjectIDSchedulesScheduleID(params, nil)
+		_, err := e.client.Schedule.DeleteProjectProjectIDSchedulesScheduleIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -640,7 +671,7 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 		params.ProjectID = pid
 		params.Schedule = req
 
-		resp, err := e.client.Schedule.PostProjectProjectIDSchedules(params, nil)
+		resp, err := e.client.Schedule.PostProjectProjectIDSchedulesContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}
@@ -668,7 +699,7 @@ func (e *Executor) executeSchedule(action ResourceAction) error {
 		params.ScheduleID = action.ExistingID
 		params.Schedule = req
 
-		_, err := e.client.Schedule.PutProjectProjectIDSchedulesScheduleID(params, nil)
+		_, err := e.client.Schedule.PutProjectProjectIDSchedulesScheduleIDContext(ctx, params, nil)
 		if err != nil {
 			return err
 		}

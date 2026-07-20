@@ -2,6 +2,7 @@ package apply
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -317,7 +318,7 @@ func TestExecute_CreateAllResolvesNameRefs(t *testing.T) {
 	}
 
 	exec := NewExecutor(f.client(), cfg, recon)
-	if errs := exec.Execute(plan); errs != 0 {
+	if errs := exec.Execute(context.Background(), plan); errs != 0 {
 		t.Fatalf("Execute errors = %d, want 0", errs)
 	}
 
@@ -385,7 +386,7 @@ func TestExecute_TemplateUpdatePreservesUnmanagedFields(t *testing.T) {
 	}
 
 	exec := NewExecutor(f.client(), cfg, recon)
-	if errs := exec.Execute(plan); errs != 0 {
+	if errs := exec.Execute(context.Background(), plan); errs != 0 {
 		t.Fatalf("Execute errors = %d, want 0", errs)
 	}
 
@@ -440,7 +441,7 @@ func TestExecute_SecretUpdateMatchesExistingByName(t *testing.T) {
 	}
 
 	exec := NewExecutor(f.client(), cfg, recon)
-	if errs := exec.Execute(plan); errs != 0 {
+	if errs := exec.Execute(context.Background(), plan); errs != 0 {
 		t.Fatalf("Execute errors = %d, want 0", errs)
 	}
 
@@ -482,7 +483,7 @@ func TestExecute_PartialFailureContinues(t *testing.T) {
 	exec := NewExecutor(f.client(), cfg, recon)
 	// Two errors: the failed key create, and the dependent repo whose name
 	// ref can no longer resolve (mustResolve guard — no more silent ID 0).
-	if errs := exec.Execute(plan); errs != 2 {
+	if errs := exec.Execute(context.Background(), plan); errs != 2 {
 		t.Fatalf("Execute errors = %d, want 2 (key + dependent repo)", errs)
 	}
 
@@ -514,11 +515,42 @@ func TestExecute_FailFastStopsAtFirstError(t *testing.T) {
 
 	exec := NewExecutor(f.client(), cfg, recon)
 	exec.SetFailFast(true)
-	if errs := exec.Execute(plan); errs != 1 {
+	if errs := exec.Execute(context.Background(), plan); errs != 1 {
 		t.Fatalf("Execute errors = %d, want 1", errs)
 	}
 	if f.sawRequest("POST /api/project/101/environment") {
 		t.Error("--fail-fast must stop before the variable group")
+	}
+}
+
+func TestExecute_CancelledContextStopsBeforeFirstAction(t *testing.T) {
+	f := newFakeSemaphore(t)
+
+	cfg := &ApplyConfig{
+		Project: "newproj",
+		Keys:    []KeyEntry{{Name: "k1", Type: "ssh", SSH: &SSHKeyData{PrivateKey: "m"}}},
+	}
+
+	recon := NewReconciler(f.client(), cfg)
+	plan, err := recon.BuildPlan()
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	exec := NewExecutor(f.client(), cfg, recon)
+	if errs := exec.Execute(ctx, plan); errs != 0 {
+		t.Fatalf("Execute errors = %d, want 0 (an interrupt is not an apply error)", errs)
+	}
+	for _, req := range f.captured {
+		switch {
+		case strings.HasPrefix(req.key, "POST "),
+			strings.HasPrefix(req.key, "PUT "),
+			strings.HasPrefix(req.key, "DELETE "):
+			t.Fatalf("mutating request %q sent despite cancelled context", req.key)
+		}
 	}
 }
 
@@ -588,7 +620,7 @@ func TestExecute_ProjectDeleteTearsDownChildren(t *testing.T) {
 	}
 
 	exec := NewExecutor(f.client(), cfg, recon)
-	if errs := exec.Execute(plan); errs != 0 {
+	if errs := exec.Execute(context.Background(), plan); errs != 0 {
 		t.Fatalf("Execute errors = %d, want 0", errs)
 	}
 
