@@ -72,6 +72,7 @@ history.
 | `apply` | Apply declarative configuration files |
 | `export` | Export project state to YAML/JSON |
 | `validate` | Validate configuration files offline |
+| `trust` | Trust the config file in the current directory (`--revoke`, `--list`) |
 | `version` | Show CLI version |
 | `completion` | Generate shell completions (bash, zsh, fish, powershell) |
 
@@ -196,8 +197,17 @@ resolve case-insensitively; ambiguous names error and list the matching IDs).
 ## Configuration
 
 Config file locations (searched in order):
-1. `./semctl.yaml` (current directory)
+1. `./semctl.yaml` (current directory) — only if trusted, see below
 2. `~/.config/semctl/config.yaml`
+
+A config file found in the current directory is ignored until you trust it,
+because it could silently redirect commands — and any credentials from the
+environment — to a server you never chose. Trust it interactively when
+prompted, or run `semctl trust` (CI-friendly); trust is bound to the file's
+content, so editing the file requires trusting it again. `semctl trust
+--revoke` withdraws trust, `semctl trust --list` shows all trusted files.
+Passing the file explicitly with `--config ./semctl.yaml` always works — an
+explicit path is its own consent.
 
 ```yaml
 current_context: "default"

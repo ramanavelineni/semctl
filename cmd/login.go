@@ -154,6 +154,7 @@ the password out of shell history and process listings.`,
 		// Load config (login skips PersistentPreRunE)
 		cfgFile, _ := cmd.Flags().GetString("config")
 		_ = config.Load(cfgFile)
+		warnIfUntrustedSkipped()
 
 		// Save context config. The password is only persisted with --save-password;
 		// the cached API token handles subsequent authentication.
