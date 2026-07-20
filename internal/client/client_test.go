@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -269,5 +270,23 @@ func TestLoadCachedToken_LegacyCacheRejected(t *testing.T) {
 
 	if _, err := LoadCachedToken(); err == nil {
 		t.Fatal("expected error for pre-upgrade cache without server binding")
+	}
+}
+
+func TestTokenCachePathForContext_NormalizesCase(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	p1, err := TokenCachePathForContext("MiXeD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := TokenCachePathForContext("mixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1 != p2 {
+		t.Errorf("cache paths differ by case: %q vs %q", p1, p2)
+	}
+	if !strings.HasSuffix(p1, "mixed.json") {
+		t.Errorf("cache path not normalized: %q", p1)
 	}
 }
