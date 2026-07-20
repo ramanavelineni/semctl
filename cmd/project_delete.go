@@ -7,13 +7,13 @@ import (
 )
 
 var projectDeleteCmd = &cobra.Command{
-	Use:     "delete <id>",
+	Use:     "delete <id|name>",
 	Aliases: []string{"rm"},
 	Short:   "Delete a project",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl project delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "project")
+		id, err := resolveIDOrName(cmd, args[0], "project", projectNameIDs)
 		if err != nil {
 			return err
 		}

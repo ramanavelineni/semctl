@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/client"
@@ -13,7 +12,7 @@ import (
 )
 
 var keyUpdateCmd = &cobra.Command{
-	Use:   "update <id> [field=value...]",
+	Use:   "update <id|name> [field=value...]",
 	Short: "Update an access key",
 	Long: `Update an access key. Fields: name, type, login, password, private_key, passphrase.
 
@@ -25,9 +24,9 @@ name or type leaves the stored secret untouched.`,
 	Example: `  semctl key update 1 name="Renamed Key"
   semctl key update 2 login=newuser password=newpass`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "key", keyNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid key ID: %w", err)
+			return err
 		}
 
 		pid, err := getProjectID(cmd)

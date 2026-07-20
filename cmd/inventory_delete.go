@@ -7,13 +7,13 @@ import (
 )
 
 var inventoryDeleteCmd = &cobra.Command{
-	Use:     "delete <id>",
+	Use:     "delete <id|name>",
 	Aliases: []string{"rm"},
 	Short:   "Delete an inventory",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl inventory delete 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "inventory")
+		id, err := resolveIDOrName(cmd, args[0], "inventory", inventoryNameIDs)
 		if err != nil {
 			return err
 		}

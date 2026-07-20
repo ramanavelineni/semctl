@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/ramanavelineni/semctl/internal/client"
@@ -13,16 +12,16 @@ import (
 )
 
 var envUpdateCmd = &cobra.Command{
-	Use:   "update <id> [field=value...]",
+	Use:   "update <id|name> [field=value...]",
 	Short: "Update an environment",
 	Long:  `Update an environment. Fields: name, json, env, password.`,
 	Args:  cobra.MinimumNArgs(1),
 	Example: `  semctl env update 1 name="Production v2"
   semctl env update 2 json='{"db_host":"10.0.0.5"}' password=newsecret`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "environment", envNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid environment ID: %w", err)
+			return err
 		}
 
 		pid, err := getProjectID(cmd)

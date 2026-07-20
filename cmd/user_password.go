@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -17,15 +16,15 @@ import (
 )
 
 var userPasswordCmd = &cobra.Command{
-	Use:   "password <id>",
+	Use:   "password <id|username>",
 	Short: "Change a user's password",
 	Args:  cobra.ExactArgs(1),
 	Example: `  semctl user password 2                       # prompts on a terminal
   semctl user password 2 --password-stdin < pass.txt`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "user", userNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid user ID: %w", err)
+			return err
 		}
 
 		passwordStdin, _ := cmd.Flags().GetBool("password-stdin")

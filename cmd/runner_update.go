@@ -13,7 +13,7 @@ import (
 )
 
 var runnerUpdateCmd = &cobra.Command{
-	Use:   "update <id> <field=value>...",
+	Use:   "update <id|name> <field=value>...",
 	Short: "Update a runner",
 	Long: `Update runner fields using field=value pairs.
 
@@ -23,9 +23,9 @@ Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webh
   semctl runner update 1 active=false max_parallel_tasks=4
   semctl runner update 1 tags=gpu,cuda`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "runner", runnerNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid runner ID: %w", err)
+			return err
 		}
 		if len(args) < 2 {
 			return fmt.Errorf("no fields to update — provide field=value pairs")

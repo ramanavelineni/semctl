@@ -13,20 +13,20 @@ import (
 )
 
 var projectUpdateCmd = &cobra.Command{
-	Use:   "update [id] [field=value...]",
+	Use:   "update [id|name] [field=value...]",
 	Short: "Update a project",
 	Long:  `Update a project. The target comes from the optional leading ID, the --project flag, or the config default. Fields: name, type, alert, alert_chat, max_parallel_tasks.`,
 	Example: `  semctl project update 1 name="New Name"
   semctl project update -p 1 alert=true alert_chat="#ops"
   semctl project update max_parallel_tasks=5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Accept an optional leading ID for symmetry with every other
-		// update command ("template update 5 ..." vs "project update ...").
+		// Accept an optional leading ID or name for symmetry with every
+		// other update command ("template update 5 ..." vs "project update ...").
 		var id int64
 		if len(args) > 0 && !strings.Contains(args[0], "=") {
-			n, err := strconv.ParseInt(args[0], 10, 64)
+			n, err := resolveIDOrName(cmd, args[0], "project", projectNameIDs)
 			if err != nil {
-				return fmt.Errorf("invalid argument %q — expected a project ID or field=value", args[0])
+				return err
 			}
 			id = n
 			args = args[1:]

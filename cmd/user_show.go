@@ -10,7 +10,7 @@ import (
 )
 
 var userShowCmd = &cobra.Command{
-	Use:   "show [id]",
+	Use:   "show [id|username]",
 	Short: "Show a user (defaults to the authenticated user)",
 	Args:  cobra.MaximumNArgs(1),
 	Example: `  semctl user show        # current user
@@ -31,7 +31,7 @@ var userShowCmd = &cobra.Command{
 					}
 					return resp.GetPayload(), nil
 				}
-				id, err := parseIDArg(args[0], "user")
+				id, err := resolveIDOrName(cmd, args[0], "user", userNameIDs)
 				if err != nil {
 					return nil, err
 				}

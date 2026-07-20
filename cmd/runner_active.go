@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -12,7 +11,7 @@ import (
 )
 
 var runnerActivateCmd = &cobra.Command{
-	Use:     "activate <id>",
+	Use:     "activate <id|name>",
 	Short:   "Activate a runner",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl runner activate 1",
@@ -22,7 +21,7 @@ var runnerActivateCmd = &cobra.Command{
 }
 
 var runnerDeactivateCmd = &cobra.Command{
-	Use:     "deactivate <id>",
+	Use:     "deactivate <id|name>",
 	Short:   "Deactivate a runner",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl runner deactivate 1",
@@ -32,9 +31,9 @@ var runnerDeactivateCmd = &cobra.Command{
 }
 
 func setRunnerActive(cmd *cobra.Command, idArg string, active bool) error {
-	id, err := strconv.ParseInt(idArg, 10, 64)
+	id, err := resolveIDOrName(cmd, idArg, "runner", runnerNameIDs)
 	if err != nil {
-		return fmt.Errorf("invalid runner ID: %w", err)
+		return err
 	}
 
 	pid, projectScoped, err := runnerScope(cmd)

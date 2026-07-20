@@ -13,16 +13,16 @@ import (
 )
 
 var inventoryUpdateCmd = &cobra.Command{
-	Use:   "update <id> [field=value...]",
+	Use:   "update <id|name> [field=value...]",
 	Short: "Update an inventory",
 	Long:  `Update an inventory. Fields: name, type, inventory, ssh_key_id, become_key_id, repository_id.`,
 	Args:  cobra.MinimumNArgs(1),
 	Example: `  semctl inventory update 1 name="Staging Hosts"
   semctl inventory update 2 type=static-yaml inventory="all:\n  hosts:\n    10.0.0.1:"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "inventory", inventoryNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid inventory ID: %w", err)
+			return err
 		}
 
 		pid, err := getProjectID(cmd)

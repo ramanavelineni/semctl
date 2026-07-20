@@ -10,12 +10,13 @@ import (
 )
 
 var projectShowCmd = &cobra.Command{
-	Use:     "show <id>",
-	Short:   "Show project details",
-	Args:    cobra.ExactArgs(1),
-	Example: "  semctl project show 1",
+	Use:   "show <id|name>",
+	Short: "Show project details",
+	Args:  cobra.ExactArgs(1),
+	Example: `  semctl project show 1
+  semctl project show myproject`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "project")
+		id, err := resolveIDOrName(cmd, args[0], "project", projectNameIDs)
 		if err != nil {
 			return err
 		}

@@ -10,12 +10,12 @@ import (
 )
 
 var repoShowCmd = &cobra.Command{
-	Use:     "show <id>",
+	Use:     "show <id|name>",
 	Short:   "Show repository details",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl repo show 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "repository")
+		id, err := resolveIDOrName(cmd, args[0], "repository", repoNameIDs)
 		if err != nil {
 			return err
 		}

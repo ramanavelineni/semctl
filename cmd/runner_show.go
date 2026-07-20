@@ -11,12 +11,12 @@ import (
 )
 
 var runnerShowCmd = &cobra.Command{
-	Use:     "show <id>",
+	Use:     "show <id|name>",
 	Short:   "Show runner details",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl runner show 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "runner")
+		id, err := resolveIDOrName(cmd, args[0], "runner", runnerNameIDs)
 		if err != nil {
 			return err
 		}

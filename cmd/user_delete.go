@@ -7,13 +7,13 @@ import (
 )
 
 var userDeleteCmd = &cobra.Command{
-	Use:     "delete <id>",
+	Use:     "delete <id|username>",
 	Aliases: []string{"rm"},
 	Short:   "Delete a user",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl user delete 2",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "user")
+		id, err := resolveIDOrName(cmd, args[0], "user", userNameIDs)
 		if err != nil {
 			return err
 		}

@@ -10,12 +10,12 @@ import (
 )
 
 var scheduleShowCmd = &cobra.Command{
-	Use:     "show <id>",
+	Use:     "show <id|name>",
 	Short:   "Show schedule details",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl schedule show 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := parseIDArg(args[0], "schedule")
+		id, err := resolveIDOrName(cmd, args[0], "schedule", scheduleNameIDs)
 		if err != nil {
 			return err
 		}

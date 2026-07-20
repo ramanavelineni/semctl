@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -11,14 +10,14 @@ import (
 )
 
 var runnerClearCacheCmd = &cobra.Command{
-	Use:     "clear-cache <id>",
+	Use:     "clear-cache <id|name>",
 	Short:   "Clear a runner's cache",
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl runner clear-cache 1",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		id, err := resolveIDOrName(cmd, args[0], "runner", runnerNameIDs)
 		if err != nil {
-			return fmt.Errorf("invalid runner ID: %w", err)
+			return err
 		}
 
 		pid, projectScoped, err := runnerScope(cmd)

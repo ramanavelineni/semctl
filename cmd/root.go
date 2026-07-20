@@ -11,7 +11,6 @@ import (
 	"github.com/ramanavelineni/semctl/internal/config"
 	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
-	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
 	"github.com/spf13/cobra"
 )
 
@@ -85,17 +84,41 @@ Exit codes:
 			}
 		}
 
-		// Set output format from flags
-		if jsonFlag, _ := cmd.Flags().GetBool("json"); jsonFlag {
-			output.SetFormat(output.FormatJSON)
-		} else if yamlFlag, _ := cmd.Flags().GetBool("yaml"); yamlFlag {
-			output.SetFormat(output.FormatYAML)
-		} else {
-			output.SetFormat(output.FormatFromConfig())
-		}
-
-		return nil
+		return resolveOutputFormat(cmd)
 	},
+}
+
+// resolveOutputFormat applies --output/--json/--yaml, erroring when they
+// disagree (previously --json --yaml silently picked JSON). export shadows
+// the global --output with its deprecated file-path flag, so the string flag
+// only counts as a format when it is the root's own.
+func resolveOutputFormat(cmd *cobra.Command) error {
+	formats := map[output.Format]bool{}
+	if jsonFlag, _ := cmd.Flags().GetBool("json"); jsonFlag {
+		formats[output.FormatJSON] = true
+	}
+	if yamlFlag, _ := cmd.Flags().GetBool("yaml"); yamlFlag {
+		formats[output.FormatYAML] = true
+	}
+	if f := cmd.Flags().Lookup("output"); f != nil && f.Changed && f == cmd.Root().PersistentFlags().Lookup("output") {
+		switch v := output.Format(strings.ToLower(f.Value.String())); v {
+		case output.FormatTable, output.FormatJSON, output.FormatYAML:
+			formats[v] = true
+		default:
+			return fmt.Errorf("invalid output format %q (valid: table, json, yaml)", f.Value.String())
+		}
+	}
+	switch len(formats) {
+	case 0:
+		output.SetFormat(output.FormatFromConfig())
+	case 1:
+		for f := range formats {
+			output.SetFormat(f)
+		}
+	default:
+		return fmt.Errorf("conflicting output formats: pass only one of --output, --json, --yaml")
+	}
+	return nil
 }
 
 // Execute runs the root command.
@@ -159,26 +182,22 @@ func getProjectID(cmd *cobra.Command) (int32, error) {
 
 // resolveProjectByName looks up a project ID by case-insensitive name.
 func resolveProjectByName(name string) (int32, error) {
-	apiClient, err := client.NewAuthenticatedClient()
+	items, err := projectNameIDs(nil)
 	if err != nil {
 		return 0, err
 	}
-	resp, err := apiClient.Project.GetProjects(project.NewGetProjectsParams(), nil)
+	id, err := matchNameID(items, name, "project")
 	if err != nil {
-		return 0, fmt.Errorf("failed to list projects while resolving %q: %w", name, err)
+		return 0, err
 	}
-	for _, pr := range resp.GetPayload() {
-		if strings.EqualFold(pr.Name, name) {
-			return int32(pr.ID), nil
-		}
-	}
-	return 0, fmt.Errorf("project %q not found", name)
+	return int32(id), nil
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringP("config", "c", "", "path to config file")
-	rootCmd.PersistentFlags().Bool("json", false, "output as JSON")
-	rootCmd.PersistentFlags().Bool("yaml", false, "output as YAML")
+	rootCmd.PersistentFlags().String("output", "", "output format: table, json, or yaml")
+	rootCmd.PersistentFlags().Bool("json", false, "output as JSON (same as --output json)")
+	rootCmd.PersistentFlags().Bool("yaml", false, "output as YAML (same as --output yaml)")
 	rootCmd.PersistentFlags().BoolP("yes", "y", false, "auto-confirm prompts")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress success/info messages (warnings and errors still print)")
 	rootCmd.PersistentFlags().Bool("no-color", false, "disable colored output")
