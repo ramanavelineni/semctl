@@ -17,6 +17,7 @@ var contextCmd = &cobra.Command{
 		if err := config.Load(cfgFile); err != nil {
 			return fmt.Errorf("config error: %w", err)
 		}
+		warnIfUntrustedSkipped()
 
 		if jsonFlag, _ := cmd.Flags().GetBool("json"); jsonFlag {
 			output.SetFormat(output.FormatJSON)

@@ -31,6 +31,7 @@ saved credentials from the config file for the current (or specified) context.`,
 		// Load config (logout skips PersistentPreRunE)
 		cfgFile, _ := cmd.Flags().GetString("config")
 		_ = config.Load(cfgFile)
+		warnIfUntrustedSkipped()
 
 		targetContext := contextFlag
 		if targetContext == "" {

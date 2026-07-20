@@ -137,22 +137,29 @@ func LoadedFromCWD() bool {
 // Load reads the config file. Search order: explicit path, ./semctl.yaml,
 // ./.semctl.yaml, ~/.config/semctl/config.{yaml,yml}, then
 // $XDG_CONFIG_HOME/semctl/config.{yaml,yml}. A missing file is fine; a
-// malformed one is an error.
+// malformed one is an error. Working-directory configs load only when
+// trusted (see trust.go); an untrusted one is skipped — recorded in
+// SkippedUntrustedConfig — and the search falls through to the home config.
 func Load(cfgFile string) error {
 	cfg = &fileConfig{}
 	configFileUsed = ""
 	loadedFromCWD = false
 	sessionContext = ""
+	skippedUntrusted = ""
 
+	var raw []byte
 	path := cfgFile
 	if path == "" {
-		if _, err := os.Stat("semctl.yaml"); err == nil {
-			path = "semctl.yaml"
-			loadedFromCWD = true
-		} else if _, err := os.Stat(".semctl.yaml"); err == nil {
-			path = ".semctl.yaml"
-			loadedFromCWD = true
-		} else {
+		if cwdPath := FindCWDConfig(); cwdPath != "" {
+			if content, ok := trustedCWDConfigContent(cwdPath); ok {
+				path = cwdPath
+				raw = content
+				loadedFromCWD = true
+			} else {
+				skippedUntrusted = cwdPath
+			}
+		}
+		if path == "" {
 			for _, candidate := range searchPaths() {
 				if _, err := os.Stat(candidate); err == nil {
 					path = candidate
@@ -165,14 +172,17 @@ func Load(cfgFile string) error {
 		}
 	}
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		// An explicit --config target is remembered even when it doesn't
-		// exist yet: login ignores this error and then writes the file there.
-		if cfgFile != "" {
-			configFileUsed = cfgFile
+	if raw == nil {
+		var err error
+		raw, err = os.ReadFile(path)
+		if err != nil {
+			// An explicit --config target is remembered even when it doesn't
+			// exist yet: login ignores this error and then writes the file there.
+			if cfgFile != "" {
+				configFileUsed = cfgFile
+			}
+			return err
 		}
-		return err
 	}
 	// yaml.v3 also rejects duplicate mapping keys here — previously Viper
 	// merged them unpredictably (the "two prod: blocks" failure mode).

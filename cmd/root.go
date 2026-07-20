@@ -60,8 +60,9 @@ Exit codes:
 		}
 
 		// Skip config loading for commands that don't need existing config
+		// (trust manages the trust store, not the config itself)
 		switch cmd.Name() {
-		case "completion", "version", "__complete", "login", "logout":
+		case "completion", "version", "__complete", "login", "logout", "trust":
 			return nil
 		}
 
@@ -80,6 +81,7 @@ Exit codes:
 		if config.LoadedFromCWD() {
 			style.Info(fmt.Sprintf("Using config from current directory: %s", config.ConfigFilePath()))
 		}
+		warnIfUntrustedSkipped()
 
 		// Apply --context override if set
 		if ctxFlag, _ := cmd.Flags().GetString("context"); ctxFlag != "" {
@@ -135,6 +137,7 @@ func Execute() {
 		<-ctx.Done()
 		stop()
 	}()
+	config.TrustPrompt = promptTrustCWDConfig
 	enforceSubcommands(rootCmd)
 	registerDynamicCompletions()
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
