@@ -1,10 +1,20 @@
 name: CI
 
+# paths-ignore skips docs-only changes. If branch protection with required
+# status checks is ever enabled, this needs the companion no-op workflow
+# pattern (same job names, inverse paths) or PRs will hang on "expected"
+# checks that never report.
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 permissions:
   contents: read
