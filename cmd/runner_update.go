@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/runner"
@@ -27,10 +29,6 @@ Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webh
 		if err != nil {
 			return err
 		}
-		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
-		}
-
 		pid, projectScoped, err := runnerScope(cmd)
 		if err != nil {
 			return err
@@ -75,6 +73,19 @@ Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webh
 		}
 		if projectScoped {
 			req.ProjectID = pid
+		}
+
+		if len(args) < 2 {
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := runnerUpdateForm(req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -131,6 +142,31 @@ Supported fields: name, active, max_parallel_tasks, tags (comma-separated), webh
 		style.Success(fmt.Sprintf("Updated runner %d", id))
 		return nil
 	},
+}
+
+// runnerUpdateForm edits req in place, pre-filled with the current values.
+func runnerUpdateForm(req *models.RunnerRequest) error {
+	maxPar := strconv.FormatInt(req.MaxParallelTasks, 10)
+	tags := strings.Join(req.Tags, ",")
+	if err := runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name),
+			huh.NewConfirm().Title("Active").Value(&req.Active),
+			huh.NewInput().Title("Max parallel tasks").Value(&maxPar).
+				Validate(optionalInt("max parallel tasks")),
+			huh.NewInput().Title("Tags (comma-separated)").Value(&tags),
+			huh.NewInput().Title("Webhook (optional)").Value(&req.Webhook),
+		).Title("Edit runner").Description(moreFlagsNote),
+	)); err != nil {
+		return err
+	}
+	req.MaxParallelTasks = parseOptionalInt(maxPar)
+	if strings.TrimSpace(tags) == "" {
+		req.Tags = []string{}
+	} else {
+		req.Tags = strings.Split(tags, ",")
+	}
+	return nil
 }
 
 func init() {

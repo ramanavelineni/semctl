@@ -8,9 +8,30 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/spf13/cobra"
 )
+
+// moreFlagsNote marks forms that expose only the common fields.
+const moreFlagsNote = "Only common fields are shown — more options are available as flags/fields (see --help)."
+
+// nameIDOptions builds select options from a resource listing (same fetchers
+// as resolveIDOrName); includeNone prepends a "(none)" choice mapping to 0.
+func nameIDOptions(cmd *cobra.Command, list func(*cobra.Command) ([]nameID, error), includeNone bool) ([]huh.Option[int64], error) {
+	items, err := list(cmd)
+	if err != nil {
+		return nil, err
+	}
+	opts := make([]huh.Option[int64], 0, len(items)+1)
+	if includeNone {
+		opts = append(opts, huh.NewOption("(none)", int64(0)))
+	}
+	for _, it := range items {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s (ID %d)", it.Name, it.ID), it.ID))
+	}
+	return opts, nil
+}
 
 // optionalInt is a huh validator accepting empty input or an integer.
 func optionalInt(field string) func(string) error {
@@ -81,10 +102,9 @@ func shouldAutoInteractive(cmd *cobra.Command, inputsMissing bool) (bool, error)
 		return false, nil
 	}
 
-	if jsonFlag, _ := cmd.Flags().GetBool("json"); jsonFlag {
-		return false, nil
-	}
-	if yamlFlag, _ := cmd.Flags().GetBool("yaml"); yamlFlag {
+	// Machine-readable output means a scripting context, whether it came from
+	// --json/--yaml, --output, or the config default format.
+	if output.GetFormat() != output.FormatTable {
 		return false, nil
 	}
 

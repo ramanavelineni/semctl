@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/charmbracelet/huh"
 
@@ -44,16 +43,6 @@ var templateCreateCmd = &cobra.Command{
 			return err
 		}
 		if interactive {
-			repoIDStr, invIDStr, envIDStr := "", "", ""
-			if repoID != 0 {
-				repoIDStr = strconv.FormatInt(repoID, 10)
-			}
-			if invID != 0 {
-				invIDStr = strconv.FormatInt(invID, 10)
-			}
-			if envID != 0 {
-				envIDStr = strconv.FormatInt(envID, 10)
-			}
 			if app == "" {
 				app = "ansible"
 			}
@@ -67,25 +56,33 @@ var templateCreateCmd = &cobra.Command{
 					huh.NewInput().Title("Playbook").
 						Description("e.g. playbook.yml").
 						Value(&playbook),
-					huh.NewInput().Title("Repository ID").
-						Description("semctl repo list shows available repositories").
-						Value(&repoIDStr).
-						Validate(optionalInt("repository ID")),
-					huh.NewInput().Title("Inventory ID").
-						Description("semctl inventory list shows available inventories").
-						Value(&invIDStr).
-						Validate(optionalInt("inventory ID")),
-					huh.NewInput().Title("Environment ID").
-						Description("semctl env list shows available variable groups").
-						Value(&envIDStr).
-						Validate(optionalInt("environment ID")),
-				).Title("New template"),
+				).Title("New template").Description(moreFlagsNote),
 			)); err != nil {
 				return err
 			}
-			repoID = parseOptionalInt(repoIDStr)
-			invID = parseOptionalInt(invIDStr)
-			envID = parseOptionalInt(envIDStr)
+
+			// Second stage: pick linked resources from the server.
+			repoOpts, err := nameIDOptions(cmd, repoNameIDs, true)
+			if err != nil {
+				return err
+			}
+			invOpts, err := nameIDOptions(cmd, inventoryNameIDs, true)
+			if err != nil {
+				return err
+			}
+			envOpts, err := nameIDOptions(cmd, envNameIDs, true)
+			if err != nil {
+				return err
+			}
+			if err := runForm(newForm(
+				huh.NewGroup(
+					huh.NewSelect[int64]().Title("Repository").Options(repoOpts...).Value(&repoID),
+					huh.NewSelect[int64]().Title("Inventory").Options(invOpts...).Value(&invID),
+					huh.NewSelect[int64]().Title("Variable group").Options(envOpts...).Value(&envID),
+				).Title("Linked resources"),
+			)); err != nil {
+				return err
+			}
 		}
 
 		if name == "" {

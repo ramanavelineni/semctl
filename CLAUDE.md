@@ -17,7 +17,7 @@ Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper
 - HTTP: 30s default timeout (`client.SetTimeout` via `--timeout`), TLS options `--insecure`/`--ca-cert` + `server.insecure_skip_verify`/`server.ca_cert` config keys; `client.WarnIfPlaintext` on http to non-localhost
 - Project-scoped commands: `getProjectID(cmd)` — `--project` flag (numeric ID or name, resolved case-insensitively) → `defaults.project_id` config → error
 - Commands skipped in PersistentPreRunE: login, logout, completion, version, __complete (session flags like --timeout are processed before the skip)
-- Interactive mode: `shouldAutoInteractive(cmd, inputsMissing)` pattern
+- Interactive mode: `shouldAutoInteractive(cmd, inputsMissing)` pattern — suppressed whenever the output format ≠ table (any of --json/--yaml/--output/config default). Update commands with no `field=value` args launch a pre-filled form (`xUpdateForm` next to each command); form selects populate from the API via `nameIDOptions(cmd, xNameIDs, includeNone)` (form.go)
 - Runner commands are GLOBAL by default; only an explicit `--project` flag selects project scope (`runnerScope(cmd)` — config defaults.project_id deliberately ignored)
 - Update commands use `field=value` positional args pattern: fetch current resource, apply overrides, PUT back
 - List/show/delete commands MUST go through the generics in cmd/resource_helpers.go — `runList(what, headers, fetch, row)`, `runShow(what, fetch, fields)`, `runDelete(cmd, what, id, del)`, `parseIDArg`. The fetch/del closure owns the typed go-swagger params; auth (`client.NewAuthenticatedClient`) happens BEFORE the helper so auth errors stay unwrapped. `what` is plural for lists, singular for show/delete

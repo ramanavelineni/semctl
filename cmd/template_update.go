@@ -5,7 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/ramanavelineni/semctl/internal/apply"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/template"
@@ -71,7 +73,16 @@ var templateUpdateCmd = &cobra.Command{
 		apply.PreserveUnmanagedTemplateFields(req, t)
 
 		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := templateUpdateForm(cmd, req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -155,6 +166,38 @@ var templateUpdateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Updated template %d", id))
 		return nil
 	},
+}
+
+// templateUpdateForm edits req in place, pre-filled with the current values;
+// linked resources are chosen from live server listings.
+func templateUpdateForm(cmd *cobra.Command, req *models.TemplateRequest) error {
+	repoOpts, err := nameIDOptions(cmd, repoNameIDs, false)
+	if err != nil {
+		return err
+	}
+	invOpts, err := nameIDOptions(cmd, inventoryNameIDs, true)
+	if err != nil {
+		return err
+	}
+	envOpts, err := nameIDOptions(cmd, envNameIDs, true)
+	if err != nil {
+		return err
+	}
+	return runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name).
+				Validate(requireValue("name")),
+			huh.NewInput().Title("Description").Value(&req.Description),
+			huh.NewInput().Title("App").Value(&req.App),
+			huh.NewInput().Title("Playbook").Value(&req.Playbook),
+			huh.NewInput().Title("Git branch").Value(&req.GitBranch),
+			huh.NewSelect[int64]().Title("Repository").Options(repoOpts...).Value(&req.RepositoryID),
+			huh.NewSelect[int64]().Title("Inventory").Options(invOpts...).Value(&req.InventoryID),
+			huh.NewSelect[int64]().Title("Variable group").Options(envOpts...).Value(&req.EnvironmentID),
+			huh.NewConfirm().Title("Autorun").Value(&req.Autorun),
+			huh.NewConfirm().Title("Suppress success alerts").Value(&req.SuppressSuccessAlerts),
+		).Title("Edit template").Description(moreFlagsNote),
+	))
 }
 
 func init() {

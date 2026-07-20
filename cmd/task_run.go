@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/ramanavelineni/semctl/internal/style"
@@ -50,6 +52,56 @@ CI pipelines that need to gate on task success.`,
 
 		if follow {
 			wait = true
+		}
+
+		interactive, err := shouldAutoInteractive(cmd, templateID == 0)
+		if err != nil {
+			return err
+		}
+		if interactive {
+			tplOpts, err := nameIDOptions(cmd, templateNameIDs, false)
+			if err != nil {
+				return err
+			}
+			if len(tplOpts) == 0 {
+				return fmt.Errorf("no templates in this project — create one with 'semctl template create'")
+			}
+			var toggles []string
+			if debug {
+				toggles = append(toggles, "debug")
+			}
+			if dryRun {
+				toggles = append(toggles, "dry-run")
+			}
+			if diff {
+				toggles = append(toggles, "diff")
+			}
+			if err := runForm(newForm(
+				huh.NewGroup(
+					huh.NewSelect[int64]().Title("Template").Options(tplOpts...).Value(&templateID),
+					huh.NewInput().Title("Message (optional)").Value(&message),
+					huh.NewInput().Title("Git branch (optional)").Value(&gitBranch),
+					huh.NewMultiSelect[string]().Title("Options").
+						Options(
+							huh.NewOption("debug", "debug"),
+							huh.NewOption("dry-run", "dry-run"),
+							huh.NewOption("diff", "diff"),
+						).Value(&toggles),
+				).Title("Run task").Description(moreFlagsNote),
+			)); err != nil {
+				return err
+			}
+			debug, dryRun, diff = false, false, false
+			for _, tgl := range toggles {
+				switch tgl {
+				case "debug":
+					debug = true
+				case "dry-run":
+					dryRun = true
+				case "diff":
+					diff = true
+				}
+			}
 		}
 
 		if templateID == 0 {

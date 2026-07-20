@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/repository"
@@ -55,7 +57,16 @@ var repoUpdateCmd = &cobra.Command{
 		}
 
 		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := repoUpdateForm(cmd, req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -95,6 +106,24 @@ var repoUpdateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Updated repository %d", id))
 		return nil
 	},
+}
+
+// repoUpdateForm edits req in place, pre-filled with the current values.
+func repoUpdateForm(cmd *cobra.Command, req *models.RepositoryRequest) error {
+	keyOpts, err := nameIDOptions(cmd, keyNameIDs, true)
+	if err != nil {
+		return err
+	}
+	return runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name).
+				Validate(requireValue("name")),
+			huh.NewInput().Title("Git URL").Value(&req.GitURL).
+				Validate(requireValue("git URL")),
+			huh.NewInput().Title("Git branch").Value(&req.GitBranch),
+			huh.NewSelect[int64]().Title("SSH key").Options(keyOpts...).Value(&req.SSHKeyID),
+		).Title("Edit repository"),
+	))
 }
 
 func init() {

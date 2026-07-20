@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/variable_group"
@@ -54,7 +56,16 @@ var envUpdateCmd = &cobra.Command{
 		}
 
 		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := envUpdateForm(req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -90,6 +101,20 @@ var envUpdateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Updated environment %d", id))
 		return nil
 	},
+}
+
+// envUpdateForm edits req in place, pre-filled with the current values.
+func envUpdateForm(req *models.EnvironmentRequest) error {
+	return runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name).
+				Validate(requireValue("name")),
+			huh.NewText().Title("Extra variables (JSON)").Value(&req.JSON),
+			huh.NewText().Title("Environment variables (JSON)").Value(&req.Env),
+			huh.NewInput().Title("Password (empty = keep)").
+				EchoMode(huh.EchoModePassword).Value(&req.Password),
+		).Title("Edit variable group").Description(moreFlagsNote),
+	))
 }
 
 func init() {

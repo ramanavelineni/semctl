@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/user"
@@ -26,10 +28,6 @@ Supported fields: username, name, email, admin, alert`,
 		if err != nil {
 			return err
 		}
-		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
-		}
-
 		apiClient, err := client.NewAuthenticatedClient()
 		if err != nil {
 			return err
@@ -49,6 +47,19 @@ Supported fields: username, name, email, admin, alert`,
 			Email:    current.Email,
 			Admin:    current.Admin,
 			Alert:    current.Alert,
+		}
+
+		if len(args) < 2 {
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := userUpdateForm(req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -92,6 +103,21 @@ Supported fields: username, name, email, admin, alert`,
 		style.Success(fmt.Sprintf("Updated user %d", id))
 		return nil
 	},
+}
+
+// userUpdateForm edits req in place, pre-filled with the current values.
+func userUpdateForm(req *models.UserPutRequest) error {
+	return runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Username").Value(&req.Username).
+				Validate(requireValue("username")),
+			huh.NewInput().Title("Name").Value(&req.Name).
+				Validate(requireValue("name")),
+			huh.NewInput().Title("Email").Value(&req.Email),
+			huh.NewConfirm().Title("Admin").Value(&req.Admin),
+			huh.NewConfirm().Title("Alerts").Value(&req.Alert),
+		).Title("Edit user"),
+	))
 }
 
 func init() {
