@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-openapi/strfmt"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/schedule"
@@ -26,10 +28,6 @@ var scheduleUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
-		}
-
 		pid, err := getProjectID(cmd)
 		if err != nil {
 			return err
@@ -59,6 +57,19 @@ var scheduleUpdateCmd = &cobra.Command{
 			Type:       cur.Type,
 			RunAt:      cur.RunAt,
 			TaskParams: cur.TaskParams,
+		}
+
+		if len(args) < 2 {
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := scheduleUpdateForm(cmd, req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -109,6 +120,23 @@ var scheduleUpdateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Updated schedule %d", id))
 		return nil
 	},
+}
+
+// scheduleUpdateForm edits req in place, pre-filled with the current values.
+func scheduleUpdateForm(cmd *cobra.Command, req *models.ScheduleRequest) error {
+	tplOpts, err := nameIDOptions(cmd, templateNameIDs, false)
+	if err != nil {
+		return err
+	}
+	return runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name),
+			huh.NewInput().Title("Cron expression").Value(&req.CronFormat).
+				Validate(requireValue("cron expression")),
+			huh.NewSelect[int64]().Title("Template").Options(tplOpts...).Value(&req.TemplateID),
+			huh.NewConfirm().Title("Active").Value(&req.Active),
+		).Title("Edit schedule").Description(moreFlagsNote),
+	))
 }
 
 func init() {

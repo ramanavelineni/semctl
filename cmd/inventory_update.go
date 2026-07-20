@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/inventory"
@@ -57,7 +59,16 @@ var inventoryUpdateCmd = &cobra.Command{
 		}
 
 		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := inventoryUpdateForm(cmd, req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args[1:] {
@@ -109,6 +120,35 @@ var inventoryUpdateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Updated inventory %d", id))
 		return nil
 	},
+}
+
+// inventoryUpdateForm edits req in place, pre-filled with the current values.
+func inventoryUpdateForm(cmd *cobra.Command, req *models.InventoryRequest) error {
+	keyOpts, err := nameIDOptions(cmd, keyNameIDs, true)
+	if err != nil {
+		return err
+	}
+	repoOpts, err := nameIDOptions(cmd, repoNameIDs, true)
+	if err != nil {
+		return err
+	}
+	return runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name).
+				Validate(requireValue("name")),
+			huh.NewSelect[string]().Title("Type").
+				Options(
+					huh.NewOption("static", "static"),
+					huh.NewOption("static-yaml", "static-yaml"),
+					huh.NewOption("file", "file"),
+					huh.NewOption("terraform-workspace", "terraform-workspace"),
+				).Value(&req.Type),
+			huh.NewText().Title("Inventory content").Value(&req.Inventory),
+			huh.NewSelect[int64]().Title("SSH key").Options(keyOpts...).Value(&req.SSHKeyID),
+			huh.NewSelect[int64]().Title("Become key").Options(keyOpts...).Value(&req.BecomeKeyID),
+			huh.NewSelect[int64]().Title("Repository").Options(repoOpts...).Value(&req.RepositoryID),
+		).Title("Edit inventory").Description(moreFlagsNote),
+	))
 }
 
 func init() {

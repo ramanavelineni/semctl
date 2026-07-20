@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/key_store"
@@ -66,7 +68,16 @@ name or type leaves the stored secret untouched.`,
 		}
 
 		if len(args) < 2 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := keyUpdateForm(req); err != nil {
+				return err
+			}
 		}
 
 		// Track sub-struct fields
@@ -143,6 +154,62 @@ name or type leaves the stored secret untouched.`,
 		style.Success(fmt.Sprintf("Updated key %d", id))
 		return nil
 	},
+}
+
+// keyUpdateForm edits req in place. Renaming is always offered; replacing the
+// stored secret is opt-in because the API can only swap it wholesale.
+func keyUpdateForm(req *models.AccessKeyRequest) error {
+	rotate := false
+	fields := []huh.Field{
+		huh.NewInput().Title("Name").Value(&req.Name).
+			Validate(requireValue("name")),
+	}
+	hasSecret := req.Type == "ssh" || req.Type == "login_password"
+	if hasSecret {
+		fields = append(fields,
+			huh.NewConfirm().Title(fmt.Sprintf("Replace the stored %s secret?", req.Type)).Value(&rotate))
+	}
+	if err := runForm(newForm(
+		huh.NewGroup(fields...).Title("Edit access key").Description(moreFlagsNote),
+	)); err != nil {
+		return err
+	}
+	if !rotate {
+		return nil
+	}
+	switch req.Type {
+	case "ssh":
+		ssh := &models.AccessKeyRequestSSH{}
+		if err := runForm(newForm(
+			huh.NewGroup(
+				huh.NewInput().Title("Login (optional)").Value(&ssh.Login),
+				huh.NewText().Title("Private key").Value(&ssh.PrivateKey).
+					Validate(requireValue("private key")),
+				huh.NewInput().Title("Passphrase (optional)").
+					EchoMode(huh.EchoModePassword).Value(&ssh.Passphrase),
+			).Title("New SSH secret"),
+		)); err != nil {
+			return err
+		}
+		req.SSH = ssh
+		req.OverrideSecret = true
+	case "login_password":
+		lp := &models.AccessKeyRequestLoginPassword{}
+		if err := runForm(newForm(
+			huh.NewGroup(
+				huh.NewInput().Title("Login").Value(&lp.Login).
+					Validate(requireValue("login")),
+				huh.NewInput().Title("Password").
+					EchoMode(huh.EchoModePassword).Value(&lp.Password).
+					Validate(requireValue("password")),
+			).Title("New login/password secret"),
+		)); err != nil {
+			return err
+		}
+		req.LoginPassword = lp
+		req.OverrideSecret = true
+	}
+	return nil
 }
 
 func init() {

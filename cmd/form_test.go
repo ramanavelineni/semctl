@@ -3,6 +3,7 @@ package cmd
 import (
 	"testing"
 
+	"github.com/ramanavelineni/semctl/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +55,8 @@ func TestShouldAutoInteractive_NoInteractive(t *testing.T) {
 
 func TestShouldAutoInteractive_JSONSuppresses(t *testing.T) {
 	cmd := newTestCommand()
-	_ = cmd.Flags().Set("json", "true")
+	output.SetFormat(output.FormatJSON)
+	t.Cleanup(func() { output.SetFormat(output.FormatTable) })
 
 	got, err := shouldAutoInteractive(cmd, true)
 	if err != nil {
@@ -67,7 +69,8 @@ func TestShouldAutoInteractive_JSONSuppresses(t *testing.T) {
 
 func TestShouldAutoInteractive_YAMLSuppresses(t *testing.T) {
 	cmd := newTestCommand()
-	_ = cmd.Flags().Set("yaml", "true")
+	output.SetFormat(output.FormatYAML)
+	t.Cleanup(func() { output.SetFormat(output.FormatTable) })
 
 	got, err := shouldAutoInteractive(cmd, true)
 	if err != nil {

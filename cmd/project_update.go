@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/ramanavelineni/semctl/internal/client"
 	"github.com/ramanavelineni/semctl/internal/style"
 	"github.com/ramanavelineni/semctl/pkg/semapi/client/project"
@@ -61,9 +63,18 @@ var projectUpdateCmd = &cobra.Command{
 			MaxParallelTasks: p.MaxParallelTasks,
 		}
 
-		// Apply field=value overrides
+		// Apply field=value overrides, or edit interactively when none given
 		if len(args) == 0 {
-			return fmt.Errorf("no fields to update — provide field=value pairs")
+			interactive, ferr := shouldAutoInteractive(cmd, true)
+			if ferr != nil {
+				return ferr
+			}
+			if !interactive {
+				return fmt.Errorf("no fields to update — provide field=value pairs")
+			}
+			if err := projectUpdateForm(&req); err != nil {
+				return err
+			}
 		}
 
 		for _, arg := range args {
@@ -113,6 +124,33 @@ var projectUpdateCmd = &cobra.Command{
 		style.Success(fmt.Sprintf("Updated project %d", id))
 		return nil
 	},
+}
+
+// projectUpdateForm edits req in place, pre-filled with the current values.
+func projectUpdateForm(req *models.ProjectRequest) error {
+	alertChat := strDeref(req.AlertChat)
+	maxPar := ""
+	if req.MaxParallelTasks != nil {
+		maxPar = strconv.FormatInt(*req.MaxParallelTasks, 10)
+	}
+	if err := runForm(newForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Name").Value(&req.Name).
+				Validate(requireValue("name")),
+			huh.NewConfirm().Title("Alerts enabled").Value(&req.Alert),
+			huh.NewInput().Title("Alert chat (optional)").Value(&alertChat),
+			huh.NewInput().Title("Max parallel tasks (empty = keep)").Value(&maxPar).
+				Validate(optionalInt("max parallel tasks")),
+		).Title("Edit project").Description(moreFlagsNote),
+	)); err != nil {
+		return err
+	}
+	req.AlertChat = &alertChat
+	if strings.TrimSpace(maxPar) != "" {
+		n := parseOptionalInt(maxPar)
+		req.MaxParallelTasks = &n
+	}
+	return nil
 }
 
 func init() {
