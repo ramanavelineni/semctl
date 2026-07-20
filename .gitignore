@@ -4,3 +4,5 @@ dist/
 api/
 semctl
 homelab*.yaml
+ROADMAP.md
+UPGRADE_VERSION_CHECKS.md
