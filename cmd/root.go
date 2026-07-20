@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ramanavelineni/semctl/internal/client"
@@ -36,6 +39,7 @@ Exit codes:
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Session-level flags apply to every command, including those that
 		// skip config loading (e.g. login).
+		client.SetRootContext(cmd.Context())
 		if noColor, _ := cmd.Flags().GetBool("no-color"); noColor {
 			output.DisableColor()
 		}
@@ -123,9 +127,17 @@ func resolveOutputFormat(cmd *cobra.Command) error {
 
 // Execute runs the root command.
 func Execute() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		// After the first signal cancels ctx, restore the default handler so
+		// a second Ctrl-C kills the process even if a command ignores ctx.
+		<-ctx.Done()
+		stop()
+	}()
 	enforceSubcommands(rootCmd)
 	registerDynamicCompletions()
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		os.Exit(exitCodeFor(err))
 	}
 }

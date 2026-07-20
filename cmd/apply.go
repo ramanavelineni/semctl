@@ -116,13 +116,19 @@ Bare $WORD text (no braces) is left untouched.`,
 
 			executor := apply.NewExecutor(apiClient, cfg, recon)
 			executor.SetFailFast(failFast)
-			errorCount := executor.Execute(plan)
+			errorCount := executor.Execute(cmd.Context(), plan)
 			totalErrors += errorCount
 
 			creates, updates, deletes, _ := plan.Summary()
 			totalCreates += creates
 			totalUpdates += updates
 			totalDeletes += deletes
+
+			// Ctrl-C: the executor already warned and stopped; skip any
+			// remaining files and exit as cancelled.
+			if cmd.Context().Err() != nil {
+				return withExitCode(fmt.Errorf("apply interrupted — state is partially reconciled; re-run apply to resume"), exitCancelled)
+			}
 		}
 
 		if len(files) > 1 {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 
 	"github.com/ramanavelineni/semctl/internal/client"
@@ -43,7 +44,7 @@ func exitCodeFor(err error) int {
 	if errors.As(err, &ec) {
 		return ec.code
 	}
-	if errors.Is(err, errCancelled) {
+	if errors.Is(err, errCancelled) || errors.Is(err, context.Canceled) {
 		return exitCancelled
 	}
 	if errors.Is(err, client.ErrNoCredentials) || errors.Is(err, client.ErrAuthFailed) {

@@ -38,6 +38,11 @@ func TranslateAPIError(err error) error {
 		return nil
 	}
 
+	// Ctrl-C during a request: "cannot reach <server>" would be misleading.
+	if errors.Is(err, context.Canceled) {
+		return &translatedAPIError{msg: "interrupted", err: err}
+	}
+
 	server := ""
 	if id, sErr := resolvedServerID(); sErr == nil {
 		server = id
@@ -112,6 +117,17 @@ func (t *translatingTransport) Submit(op *runtime.ClientOperation) (interface{},
 }
 
 func (t *translatingTransport) SubmitContext(ctx context.Context, op *runtime.ClientOperation) (interface{}, error) {
+	// The generated client passes context.Background() when the call site
+	// set no context of its own, so Ctrl-C must be grafted on here to reach
+	// in-flight requests. Done() == nil means ctx can never be cancelled;
+	// deriving from it (rather than replacing it) keeps any values. Safe to
+	// cancel on return: the response body is fully consumed inside Submit.
+	if rootCtx != nil && ctx.Done() == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(rootCtx, cancel)()
+	}
 	res, err := t.inner.SubmitContext(ctx, op)
 	if err != nil {
 		return res, TranslateAPIError(err)
