@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -52,14 +54,16 @@ func TestConfigFilePath(t *testing.T) {
 }
 
 func TestConfigFilePath_NilViper(t *testing.T) {
-	v = nil
+	cfg = nil
+	configFileUsed = ""
 	if got := ConfigFilePath(); got != "" {
 		t.Errorf("got %q, want empty", got)
 	}
 }
 
 func TestGetCurrentContext_Default(t *testing.T) {
-	v = nil
+	cfg = nil
+	configFileUsed = ""
 	if got := GetCurrentContext(); got != "default" {
 		t.Errorf("got %q, want %q", got, "default")
 	}
@@ -166,7 +170,8 @@ contexts:
 }
 
 func TestListContexts_NilViper(t *testing.T) {
-	v = nil
+	cfg = nil
+	configFileUsed = ""
 	if got := ListContexts(); got != nil {
 		t.Errorf("expected nil, got %v", got)
 	}
@@ -226,11 +231,12 @@ contexts:
 	}
 }
 
-func TestGetContextConfig_NilViper(t *testing.T) {
-	v = nil
+func TestGetContextConfig_NoConfigLoaded(t *testing.T) {
+	cfg = nil
+	configFileUsed = ""
 	_, err := GetContextConfig("default")
 	if err == nil {
-		t.Fatal("expected error for nil viper")
+		t.Fatal("expected error when no config is loaded")
 	}
 }
 
@@ -482,7 +488,8 @@ defaults:
 }
 
 func TestGetDefaultProjectID_NilViper(t *testing.T) {
-	v = nil
+	cfg = nil
+	configFileUsed = ""
 	if got := GetDefaultProjectID(); got != 0 {
 		t.Errorf("got %d, want 0", got)
 	}
@@ -501,7 +508,8 @@ output:
 }
 
 func TestGetOutputFormat_NilViper(t *testing.T) {
-	v = nil
+	cfg = nil
+	configFileUsed = ""
 	if got := GetOutputFormat(); got != "table" {
 		t.Errorf("got %q, want %q", got, "table")
 	}
@@ -819,5 +827,113 @@ contexts:
 	SetServerOverride("sem.example:9999")
 	if !ServerRedirected() {
 		t.Error("same host, different port should redirect")
+	}
+}
+
+func TestContextNames_CaseInsensitive(t *testing.T) {
+	path := writeTestConfig(t, "current_context: prod\ncontexts:\n  Prod:\n    server: {host: a}\n")
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(ListContexts(), ","); got != "prod" {
+		t.Errorf("ListContexts = %q, want lowercased %q", got, "prod")
+	}
+	cc, err := GetContextConfig("PROD")
+	if err != nil || cc.ServerHost != "a" {
+		t.Errorf("GetContextConfig(PROD) = %+v, %v", cc, err)
+	}
+	if got := GetCurrentContext(); got != "prod" {
+		t.Errorf("GetCurrentContext = %q, want %q", got, "prod")
+	}
+}
+
+func TestLoad_CaseCollisionRejected(t *testing.T) {
+	path := writeTestConfig(t, "contexts:\n  Prod:\n    server: {host: a}\n  prod:\n    server: {host: b}\n")
+	err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "more than once") {
+		t.Errorf("expected case-collision error, got %v", err)
+	}
+}
+
+func TestSaveContext_NormalizesAndReplacesCase(t *testing.T) {
+	path := writeTestConfig(t, "contexts:\n  Prod:\n    server: {host: old}\n")
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveContext("PROD", map[string]interface{}{"host": "new"}, map[string]interface{}{}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "Prod:") || strings.Contains(string(raw), "PROD:") {
+		t.Errorf("mixed-case context key survived save:\n%s", raw)
+	}
+	cc, err := GetContextConfig("prod")
+	if err != nil || cc.ServerHost != "new" {
+		t.Errorf("after save: %+v, %v", cc, err)
+	}
+}
+
+func TestUpdate_RefusesToClobberCorruptConfig(t *testing.T) {
+	path := writeTestConfig(t, "current_context: default\n")
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{{{invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := SaveContext("x", map[string]interface{}{"host": "h"}, map[string]interface{}{})
+	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Errorf("expected refusal on corrupt config, got %v", err)
+	}
+	raw, _ := os.ReadFile(path)
+	if string(raw) != "{{{invalid" {
+		t.Error("corrupt config was clobbered")
+	}
+}
+
+func TestUpdate_PreservesUnknownKeys(t *testing.T) {
+	path := writeTestConfig(t, "custom_key: keepme\ncurrent_context: default\n")
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCurrentContext("default"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), "custom_key: keepme") {
+		t.Errorf("unknown key dropped on save:\n%s", raw)
+	}
+}
+
+func TestConcurrentSaves_NoLostUpdates(t *testing.T) {
+	path := writeTestConfig(t, "current_context: default\n")
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if err := SaveContext(fmt.Sprintf("ctx%d", n),
+				map[string]interface{}{"host": fmt.Sprintf("h%d", n)},
+				map[string]interface{}{}); err != nil {
+				t.Errorf("save %d: %v", n, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if err := Load(path); err != nil {
+		t.Fatalf("config corrupted by concurrent saves: %v", err)
+	}
+	if got := len(ListContexts()); got != 20 {
+		t.Errorf("%d contexts survived, want 20 (lost updates)", got)
+	}
+}
+
+func TestLoad_DuplicateKeyRejected(t *testing.T) {
+	path := writeTestConfig(t, "contexts:\n  prod:\n    server: {host: a}\n  prod:\n    server: {host: b}\n")
+	if err := Load(path); err == nil {
+		t.Error("expected error for duplicate mapping key")
 	}
 }

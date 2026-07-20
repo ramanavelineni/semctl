@@ -14,7 +14,7 @@ var contextUseCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: "  semctl context use production",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+		name := config.NormalizeContextName(args[0])
 
 		// Verify context exists
 		contexts := config.ListContexts()

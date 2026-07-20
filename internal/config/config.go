@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,26 +30,69 @@ type ContextConfig struct {
 	AuthAPIToken       string
 }
 
-// serverOverride holds a session-scoped host:port override (from --server).
-var serverOverride string
+// fileConfig mirrors the on-disk YAML for reads. Writes go through a generic
+// map round-trip instead (see updateConfigFile) so keys this struct doesn't
+// know about survive a save.
+type fileConfig struct {
+	CurrentContext string                   `yaml:"current_context"`
+	Contexts       map[string]*contextEntry `yaml:"contexts"`
+	Defaults       struct {
+		ProjectID int `yaml:"project_id"`
+	} `yaml:"defaults"`
+	Output struct {
+		Format string `yaml:"format"`
+	} `yaml:"output"`
+}
+
+type contextEntry struct {
+	Server struct {
+		Host               string `yaml:"host"`
+		Port               int    `yaml:"port"`
+		Scheme             string `yaml:"scheme"`
+		InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+		CACert             string `yaml:"ca_cert"`
+	} `yaml:"server"`
+	Auth struct {
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		APIToken string `yaml:"api_token"`
+	} `yaml:"auth"`
+}
+
+// Package state. cfg is nil until Load runs; sessionContext is a --context
+// override that must not be persisted.
+var (
+	cfg            *fileConfig
+	configFileUsed string
+	loadedFromCWD  bool
+	sessionContext string
+	serverOverride string
+)
 
 // SetServerOverride overrides the server host:port for the current session.
 func SetServerOverride(hostPort string) {
 	serverOverride = hostPort
 }
 
-// contextNameRE restricts context names to filename- and Viper-safe
-// characters: no path separators or ".." (token cache paths embed the name)
-// and no dots (Viper would interpret them as nested config keys).
+// contextNameRE restricts context names to filename-safe characters: no path
+// separators or ".." (token cache paths embed the name) and no dots.
 var contextNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 // ValidateContextName rejects context names that could escape the token-cache
-// directory or address foreign Viper keys.
+// directory. Names are case-insensitive: they are lowercased at every config
+// boundary so "Prod" and "prod" are the same context.
 func ValidateContextName(name string) error {
 	if !contextNameRE.MatchString(name) {
 		return fmt.Errorf("invalid context name %q: use letters, digits, '-' or '_', starting with a letter or digit (max 64 chars)", name)
 	}
 	return nil
+}
+
+// NormalizeContextName is the single place context names are folded (context
+// names are case-insensitive). Applied on read AND write, and by the token
+// cache, so a config hand-edited with mixed case still resolves.
+func NormalizeContextName(name string) string {
+	return strings.ToLower(name)
 }
 
 // ServerRedirected reports whether a session server override (--server or
@@ -61,7 +104,7 @@ func ServerRedirected() bool {
 	if override == "" {
 		override = os.Getenv("SEMCTL_SERVER")
 	}
-	if override == "" || v == nil {
+	if override == "" || cfg == nil {
 		return false
 	}
 	cc, err := GetContextConfig(GetCurrentContext())
@@ -85,89 +128,126 @@ func CredentialsFromEnv() bool {
 	return os.Getenv("SEMCTL_AUTH_USERNAME") != "" || os.Getenv("SEMCTL_AUTH_PASSWORD") != ""
 }
 
-var v *viper.Viper
-
-// loadedFromCWD records whether the config file was picked up from the
-// current working directory (as opposed to the home config dir or --config).
-var loadedFromCWD bool
-
 // LoadedFromCWD reports whether the loaded config file came from the current
 // working directory.
 func LoadedFromCWD() bool {
 	return loadedFromCWD
 }
 
-// Load initializes Viper and loads the config file.
+// Load reads the config file. Search order: explicit path, ./semctl.yaml,
+// ./.semctl.yaml, ~/.config/semctl/config.{yaml,yml}, then
+// $XDG_CONFIG_HOME/semctl/config.{yaml,yml}. A missing file is fine; a
+// malformed one is an error.
 func Load(cfgFile string) error {
+	cfg = &fileConfig{}
+	configFileUsed = ""
 	loadedFromCWD = false
-	v = viper.New()
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-	v.SetEnvPrefix("SEMCTL")
-	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	sessionContext = ""
 
-	if cfgFile != "" {
-		v.SetConfigFile(cfgFile)
-	} else {
-		// Search paths (do NOT search "." — Viper would match the binary itself
-		// since SetConfigName("semctl") matches any file named "semctl")
-		if home, err := os.UserHomeDir(); err == nil {
-			v.AddConfigPath(filepath.Join(home, ".config", "semctl"))
-		}
-		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-			v.AddConfigPath(filepath.Join(xdg, "semctl"))
-		}
-
-		// For local project config, use the explicit filename with extension
+	path := cfgFile
+	if path == "" {
 		if _, err := os.Stat("semctl.yaml"); err == nil {
-			v.SetConfigFile("semctl.yaml")
+			path = "semctl.yaml"
 			loadedFromCWD = true
 		} else if _, err := os.Stat(".semctl.yaml"); err == nil {
-			v.SetConfigFile(".semctl.yaml")
+			path = ".semctl.yaml"
 			loadedFromCWD = true
+		} else {
+			for _, candidate := range searchPaths() {
+				if _, err := os.Stat(candidate); err == nil {
+					path = candidate
+					break
+				}
+			}
+		}
+		if path == "" {
+			return nil // no config file is OK
 		}
 	}
 
-	v.SetDefault("current_context", "default")
-
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			return nil // No config file is OK
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		// An explicit --config target is remembered even when it doesn't
+		// exist yet: login ignores this error and then writes the file there.
+		if cfgFile != "" {
+			configFileUsed = cfgFile
 		}
 		return err
+	}
+	// yaml.v3 also rejects duplicate mapping keys here — previously Viper
+	// merged them unpredictably (the "two prod: blocks" failure mode).
+	if err := yaml.Unmarshal(raw, cfg); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	configFileUsed = path
+
+	// Fold context keys to lowercase; a config carrying both "Prod" and
+	// "prod" is ambiguous rather than silently last-one-wins.
+	if len(cfg.Contexts) > 0 {
+		folded := make(map[string]*contextEntry, len(cfg.Contexts))
+		for name, entry := range cfg.Contexts {
+			lower := NormalizeContextName(name)
+			if _, dup := folded[lower]; dup {
+				return fmt.Errorf("config %s: contexts %q defined more than once (context names are case-insensitive)", path, lower)
+			}
+			folded[lower] = entry
+		}
+		cfg.Contexts = folded
 	}
 
 	// A malicious or corrupt config could set current_context to a path
 	// like "../../x" that escapes the token-cache directory downstream.
-	if name := v.GetString("current_context"); name != "" {
-		if err := ValidateContextName(name); err != nil {
-			return fmt.Errorf("config %s: current_context: %w", v.ConfigFileUsed(), err)
+	if cfg.CurrentContext != "" {
+		if err := ValidateContextName(cfg.CurrentContext); err != nil {
+			return fmt.Errorf("config %s: current_context: %w", path, err)
 		}
+		cfg.CurrentContext = NormalizeContextName(cfg.CurrentContext)
 	}
 
 	return nil
 }
 
+// searchPaths lists the home-directory config candidates in precedence order.
+func searchPaths() []string {
+	var paths []string
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths,
+			filepath.Join(home, ".config", "semctl", "config.yaml"),
+			filepath.Join(home, ".config", "semctl", "config.yml"))
+	}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		paths = append(paths,
+			filepath.Join(xdg, "semctl", "config.yaml"),
+			filepath.Join(xdg, "semctl", "config.yml"))
+	}
+	return paths
+}
+
 // ConfigFilePath returns the path of the loaded config file.
 func ConfigFilePath() string {
-	if v == nil {
-		return ""
-	}
-	return v.ConfigFileUsed()
+	return configFileUsed
 }
 
 // GetCurrentContext returns the active context name.
 func GetCurrentContext() string {
-	if v == nil {
+	if sessionContext != "" {
+		return sessionContext
+	}
+	if cfg == nil || cfg.CurrentContext == "" {
 		return "default"
 	}
-	return v.GetString("current_context")
+	return cfg.CurrentContext
 }
 
-// SetCurrentContext sets the active context name.
+// SetCurrentContext sets the active context name in the config file.
 func SetCurrentContext(name string) error {
-	return saveConfigKey("current_context", name)
+	if err := ValidateContextName(name); err != nil {
+		return err
+	}
+	return updateConfigFile(func(data map[string]interface{}) error {
+		data["current_context"] = NormalizeContextName(name)
+		return nil
+	})
 }
 
 // ApplyContext overrides the active context for the current session.
@@ -175,10 +255,10 @@ func ApplyContext(name string) error {
 	if err := ValidateContextName(name); err != nil {
 		return err
 	}
-	contexts := ListContexts()
-	for _, c := range contexts {
-		if c == name {
-			v.Set("current_context", name)
+	name = NormalizeContextName(name)
+	if cfg != nil {
+		if _, ok := cfg.Contexts[name]; ok {
+			sessionContext = name
 			return nil
 		}
 	}
@@ -187,12 +267,11 @@ func ApplyContext(name string) error {
 
 // ListContexts returns all context names sorted alphabetically.
 func ListContexts() []string {
-	if v == nil {
+	if cfg == nil {
 		return nil
 	}
-	ctxMap := v.GetStringMap("contexts")
-	names := make([]string, 0, len(ctxMap))
-	for name := range ctxMap {
+	names := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -201,24 +280,22 @@ func ListContexts() []string {
 
 // GetContextConfig returns the configuration for a named context.
 func GetContextConfig(name string) (*ContextConfig, error) {
-	if v == nil {
+	if cfg == nil {
 		return nil, fmt.Errorf("config not loaded")
 	}
-
-	prefix := fmt.Sprintf("contexts.%s", name)
-	if !v.IsSet(prefix) {
+	entry, ok := cfg.Contexts[NormalizeContextName(name)]
+	if !ok || entry == nil {
 		return nil, fmt.Errorf("context %q not found", name)
 	}
-
 	return &ContextConfig{
-		ServerHost:         v.GetString(prefix + ".server.host"),
-		ServerPort:         v.GetInt(prefix + ".server.port"),
-		ServerScheme:       v.GetString(prefix + ".server.scheme"),
-		InsecureSkipVerify: v.GetBool(prefix + ".server.insecure_skip_verify"),
-		CACert:             v.GetString(prefix + ".server.ca_cert"),
-		AuthUsername:       v.GetString(prefix + ".auth.username"),
-		AuthPassword:       v.GetString(prefix + ".auth.password"),
-		AuthAPIToken:       v.GetString(prefix + ".auth.api_token"),
+		ServerHost:         entry.Server.Host,
+		ServerPort:         entry.Server.Port,
+		ServerScheme:       entry.Server.Scheme,
+		InsecureSkipVerify: entry.Server.InsecureSkipVerify,
+		CACert:             entry.Server.CACert,
+		AuthUsername:       entry.Auth.Username,
+		AuthPassword:       entry.Auth.Password,
+		AuthAPIToken:       entry.Auth.APIToken,
 	}, nil
 }
 
@@ -269,7 +346,7 @@ func ParseHostPort(s string) (string, int, error) {
 // config. Scheme precedence: SEMCTL_SCHEME env var > context config > "http".
 func ResolveServer() (host string, port int, scheme string, err error) {
 	var cc *ContextConfig
-	if v != nil {
+	if cfg != nil {
 		cc, _ = GetContextConfig(GetCurrentContext())
 	}
 
@@ -317,16 +394,25 @@ func GetServerURL() (string, error) {
 	return fmt.Sprintf("%s://%s/api", scheme, net.JoinHostPort(host, strconv.Itoa(port))), nil
 }
 
+// currentContextConfig returns the active context's config, or nil.
+func currentContextConfig() *ContextConfig {
+	if cfg == nil {
+		return nil
+	}
+	cc, _ := GetContextConfig(GetCurrentContext())
+	return cc
+}
+
 // GetUsername returns the auth username: SEMCTL_AUTH_USERNAME env var, or the
 // current context's config value.
 func GetUsername() string {
 	if u := os.Getenv("SEMCTL_AUTH_USERNAME"); u != "" {
 		return u
 	}
-	if v == nil {
-		return ""
+	if cc := currentContextConfig(); cc != nil {
+		return cc.AuthUsername
 	}
-	return v.GetString(fmt.Sprintf("contexts.%s.auth.username", GetCurrentContext()))
+	return ""
 }
 
 // GetPassword returns the auth password: SEMCTL_AUTH_PASSWORD env var, or the
@@ -335,10 +421,10 @@ func GetPassword() string {
 	if p := os.Getenv("SEMCTL_AUTH_PASSWORD"); p != "" {
 		return p
 	}
-	if v == nil {
-		return ""
+	if cc := currentContextConfig(); cc != nil {
+		return cc.AuthPassword
 	}
-	return v.GetString(fmt.Sprintf("contexts.%s.auth.password", GetCurrentContext()))
+	return ""
 }
 
 // GetAPIToken returns the auth API token: SEMCTL_API_TOKEN env var, or the
@@ -347,26 +433,26 @@ func GetAPIToken() string {
 	if t := os.Getenv("SEMCTL_API_TOKEN"); t != "" {
 		return t
 	}
-	if v == nil {
-		return ""
+	if cc := currentContextConfig(); cc != nil {
+		return cc.AuthAPIToken
 	}
-	return v.GetString(fmt.Sprintf("contexts.%s.auth.api_token", GetCurrentContext()))
+	return ""
 }
 
 // GetDefaultProjectID returns the default project ID from config.
 func GetDefaultProjectID() int {
-	if v == nil {
+	if cfg == nil {
 		return 0
 	}
-	return v.GetInt("defaults.project_id")
+	return cfg.Defaults.ProjectID
 }
 
 // GetOutputFormat returns the configured output format.
 func GetOutputFormat() string {
-	if v == nil {
+	if cfg == nil {
 		return "table"
 	}
-	return v.GetString("output.format")
+	return cfg.Output.Format
 }
 
 // SaveContext saves or updates a context in the config file.
@@ -374,30 +460,23 @@ func SaveContext(name string, serverData, authData map[string]interface{}) error
 	if err := ValidateContextName(name); err != nil {
 		return err
 	}
-	cfgPath := resolveConfigPath()
-
-	data := make(map[string]interface{})
-
-	// Read existing config
-	if raw, err := os.ReadFile(cfgPath); err == nil {
-		_ = yaml.Unmarshal(raw, &data)
-	}
-
-	// Ensure contexts map exists
-	contexts, ok := data["contexts"].(map[string]interface{})
-	if !ok {
-		contexts = make(map[string]interface{})
-	}
-
-	// Build context entry
-	ctxEntry := map[string]interface{}{
-		"server": serverData,
-		"auth":   authData,
-	}
-	contexts[name] = ctxEntry
-	data["contexts"] = contexts
-
-	return writeConfigFile(cfgPath, data)
+	return updateConfigFile(func(data map[string]interface{}) error {
+		contexts, _ := data["contexts"].(map[string]interface{})
+		if contexts == nil {
+			contexts = make(map[string]interface{})
+		}
+		key := NormalizeContextName(name)
+		// Replace any differently-cased spelling of the same context.
+		if existing, ok := findContextKey(contexts, name); ok && existing != key {
+			delete(contexts, existing)
+		}
+		contexts[key] = map[string]interface{}{
+			"server": serverData,
+			"auth":   authData,
+		}
+		data["contexts"] = contexts
+		return nil
+	})
 }
 
 // DeleteContext removes a context from the config file.
@@ -405,38 +484,28 @@ func DeleteContext(name string) error {
 	if err := ValidateContextName(name); err != nil {
 		return err
 	}
-	cfgPath := resolveConfigPath()
-
-	data := make(map[string]interface{})
-	if raw, err := os.ReadFile(cfgPath); err == nil {
-		_ = yaml.Unmarshal(raw, &data)
-	}
-
-	contexts, ok := data["contexts"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("context %q not found", name)
-	}
-
-	if _, exists := contexts[name]; !exists {
-		return fmt.Errorf("context %q not found", name)
-	}
-
-	delete(contexts, name)
-	data["contexts"] = contexts
-
-	// If we deleted the current context, switch to another or clear
-	if cur, ok := data["current_context"].(string); ok && cur == name {
-		if len(contexts) > 0 {
-			for k := range contexts {
-				data["current_context"] = k
-				break
-			}
-		} else {
-			data["current_context"] = "default"
+	return updateConfigFile(func(data map[string]interface{}) error {
+		contexts, _ := data["contexts"].(map[string]interface{})
+		key, ok := findContextKey(contexts, name)
+		if !ok {
+			return fmt.Errorf("context %q not found", name)
 		}
-	}
+		delete(contexts, key)
+		data["contexts"] = contexts
 
-	return writeConfigFile(cfgPath, data)
+		// If we deleted the current context, switch to another or clear
+		if cur, ok := data["current_context"].(string); ok && NormalizeContextName(cur) == NormalizeContextName(name) {
+			if len(contexts) > 0 {
+				for k := range contexts {
+					data["current_context"] = NormalizeContextName(k)
+					break
+				}
+			} else {
+				data["current_context"] = "default"
+			}
+		}
+		return nil
+	})
 }
 
 // RenameContext renames a context in the config file.
@@ -447,70 +516,63 @@ func RenameContext(oldName, newName string) error {
 	if err := ValidateContextName(newName); err != nil {
 		return err
 	}
-	cfgPath := resolveConfigPath()
+	return updateConfigFile(func(data map[string]interface{}) error {
+		contexts, _ := data["contexts"].(map[string]interface{})
+		oldKey, ok := findContextKey(contexts, oldName)
+		if !ok {
+			return fmt.Errorf("context %q not found", oldName)
+		}
+		newKey := NormalizeContextName(newName)
+		if existing, ok := findContextKey(contexts, newName); ok && existing != oldKey {
+			return fmt.Errorf("context %q already exists", newName)
+		}
+		entry := contexts[oldKey]
+		delete(contexts, oldKey)
+		contexts[newKey] = entry
+		data["contexts"] = contexts
 
-	data := make(map[string]interface{})
-	if raw, err := os.ReadFile(cfgPath); err == nil {
-		_ = yaml.Unmarshal(raw, &data)
-	}
-
-	contexts, ok := data["contexts"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("context %q not found", oldName)
-	}
-
-	entry, exists := contexts[oldName]
-	if !exists {
-		return fmt.Errorf("context %q not found", oldName)
-	}
-
-	if _, exists := contexts[newName]; exists {
-		return fmt.Errorf("context %q already exists", newName)
-	}
-
-	contexts[newName] = entry
-	delete(contexts, oldName)
-	data["contexts"] = contexts
-
-	// Update current_context if it was the renamed one
-	if cur, ok := data["current_context"].(string); ok && cur == oldName {
-		data["current_context"] = newName
-	}
-
-	return writeConfigFile(cfgPath, data)
+		if cur, ok := data["current_context"].(string); ok && NormalizeContextName(cur) == NormalizeContextName(oldName) {
+			data["current_context"] = newKey
+		}
+		return nil
+	})
 }
 
 // RemoveAuthConfig removes auth credentials from the current context.
 func RemoveAuthConfig() error {
-	cfgPath := resolveConfigPath()
-
-	data := make(map[string]interface{})
-	if raw, err := os.ReadFile(cfgPath); err == nil {
-		_ = yaml.Unmarshal(raw, &data)
-	}
-
-	ctx := GetCurrentContext()
-	contexts, ok := data["contexts"].(map[string]interface{})
-	if !ok {
+	return updateConfigFile(func(data map[string]interface{}) error {
+		contexts, _ := data["contexts"].(map[string]interface{})
+		key, ok := findContextKey(contexts, GetCurrentContext())
+		if !ok {
+			return nil
+		}
+		ctxData, ok := contexts[key].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		delete(ctxData, "auth")
+		contexts[key] = ctxData
+		data["contexts"] = contexts
 		return nil
+	})
+}
+
+// findContextKey locates a context in the raw config map by case-insensitive
+// name, returning the key as actually spelled in the file.
+func findContextKey(contexts map[string]interface{}, name string) (string, bool) {
+	want := NormalizeContextName(name)
+	for k := range contexts {
+		if NormalizeContextName(k) == want {
+			return k, true
+		}
 	}
-
-	ctxData, ok := contexts[ctx].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	delete(ctxData, "auth")
-	contexts[ctx] = ctxData
-	data["contexts"] = contexts
-
-	return writeConfigFile(cfgPath, data)
+	return "", false
 }
 
 // resolveConfigPath determines where to write the config file.
 func resolveConfigPath() string {
-	if v != nil && v.ConfigFileUsed() != "" {
-		return v.ConfigFileUsed()
+	if configFileUsed != "" {
+		return configFileUsed
 	}
 
 	// Default location
@@ -520,46 +582,77 @@ func resolveConfigPath() string {
 	return "semctl.yaml"
 }
 
-// saveConfigKey updates a single key in the config file.
-func saveConfigKey(key string, value interface{}) error {
+// configMu serializes in-process writers; the flock in withConfigLock
+// serializes writers across processes.
+var configMu sync.Mutex
+
+// updateConfigFile runs a read-modify-write cycle on the config file under an
+// advisory lock, so concurrent logins can't interleave and corrupt it. The
+// raw YAML is round-tripped as a generic map: keys the fileConfig struct
+// doesn't know about survive. An unreadable existing file aborts the write
+// instead of silently starting from empty.
+func updateConfigFile(mutate func(data map[string]interface{}) error) error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	cfgPath := resolveConfigPath()
-
-	data := make(map[string]interface{})
-	if raw, err := os.ReadFile(cfgPath); err == nil {
-		_ = yaml.Unmarshal(raw, &data)
-	}
-
-	data[key] = value
-
-	return writeConfigFile(cfgPath, data)
-}
-
-// writeConfigFile writes the config data to the file, creating directories as needed.
-func writeConfigFile(path string, data map[string]interface{}) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
+	return withConfigLock(cfgPath, func() error {
+		data := make(map[string]interface{})
+		if raw, err := os.ReadFile(cfgPath); err == nil {
+			if err := yaml.Unmarshal(raw, &data); err != nil {
+				return fmt.Errorf("refusing to overwrite unparseable config %s: %w", cfgPath, err)
+			}
+			if data == nil {
+				data = make(map[string]interface{})
+			}
+		}
+		if err := mutate(data); err != nil {
+			return err
+		}
+		return writeConfigFile(cfgPath, data)
+	})
+}
 
+// writeConfigFile atomically replaces the config file (temp file + rename) so
+// a crash or a concurrent reader can never observe a half-written config.
+func writeConfigFile(path string, data map[string]interface{}) error {
 	out, err := yaml.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, out, 0600); err != nil {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
-	// WriteFile leaves a pre-existing file's mode unchanged; tighten it so a
-	// hand-created 0644 config can't end up world-readable with a password.
-	if err := os.Chmod(path, 0600); err != nil {
-		return fmt.Errorf("failed to tighten config permissions: %w", err)
+	defer func() { _ = os.Remove(tmp.Name()) }() // no-op after a successful rename
+
+	// 0600 like the token cache: the config can carry a password.
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if _, err := tmp.Write(out); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	// Reload viper
-	if v != nil {
-		v.SetConfigFile(path)
-		_ = v.ReadInConfig()
+	// Refresh the in-memory view.
+	prevCWD := loadedFromCWD
+	prevSession := sessionContext
+	if err := Load(path); err != nil {
+		return err
 	}
-
+	loadedFromCWD = prevCWD
+	sessionContext = prevSession
 	return nil
 }

@@ -1,16 +1,16 @@
 # semctl — CLI for Semaphore UI
 
 ## Project Overview
-Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra + Viper.
+Go CLI tool for managing Semaphore UI via its REST API. Built with Cobra; config is plain yaml.v3.
 
 ## Key Patterns
 - `pkg/semapi/` is a generated OpenAPI client — DO NOT HAND-EDIT
 - User messages → stderr via `style.Success()`, `style.Error()`, etc.; `--quiet` (`style.SetQuiet`) suppresses Success/Info but never Warning/Error
 - Data output → stdout via `output.Print()`, `output.PrintTable()`; `Print`/`PrintJSON`/`PrintYAML` return errors (never os.Exit) — always return or check them
-- Config writing uses `yaml.v3` directly (not Viper) for partial file updates
+- Config is owned end-to-end by `yaml.v3` (Viper dropped): reads go through the typed `fileConfig` struct, writes through a generic-map round-trip (`updateConfigFile`) that preserves unknown keys, holds an advisory flock + in-process mutex, writes atomically (temp+rename, 0600), and refuses to overwrite an unparseable file. Context names are CASE-INSENSITIVE — `config.NormalizeContextName` (lowercase) is applied at every boundary including `client.TokenCachePathForContext`; a config defining both `Prod` and `prod` fails Load
 - Auth precedence: `SEMCTL_API_TOKEN`/config api_token → cached token (`~/.cache/semctl/tokens/`) → username/password cookie login (creates + caches token). On 401 with creds available, `reauthTransport` re-logins once and retries
 - Token cache is SERVER-BOUND: the cache file stores `{token, server}` (server = `scheme://host:port`); `loadCachedToken` refuses a token whose server ≠ the currently resolved server (legacy caches without the field are invalid → one forced re-login). A `--server`/`SEMCTL_SERVER` override that differs from the context's configured server (`config.ServerRedirected()`) disables both the cached token AND the re-login/password fallback, so a redefined-context or CWD-config attack can't exfiltrate credentials. `client.ServerID(scheme,host,port)` builds the binding string
-- Context names are validated (`config.ValidateContextName`, `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) at every entry point (login/logout/context-delete/rename/ApplyContext/SaveContext, and `current_context` on Load) — they land in token-cache file paths and Viper keys, so no `/`, `..`, or `.`
+- Context names are validated (`config.ValidateContextName`, `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) at every entry point (login/logout/context-delete/rename/ApplyContext/SaveContext, and `current_context` on Load) — they land in token-cache file paths and config map keys, so no `/`, `..`, or `.`
 - `login` does NOT store the password unless `--save-password`; `logout` revokes the token server-side (`client.RevokeToken`)
 - Env overrides (checked in config getters via `os.Getenv`, NOT Viper AutomaticEnv): `SEMCTL_SERVER`, `SEMCTL_SCHEME`, `SEMCTL_API_TOKEN`, `SEMCTL_AUTH_USERNAME`, `SEMCTL_AUTH_PASSWORD`
 - Server resolution: `config.ResolveServer()` — `--server` flag > `SEMCTL_SERVER` > context config; parse host:port with `config.ParseHostPort` (net.SplitHostPort-based, errors on bad ports)

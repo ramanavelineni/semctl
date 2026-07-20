@@ -404,13 +404,16 @@ func TokenCachePath() (string, error) {
 	return TokenCachePathForContext(config.GetCurrentContext())
 }
 
-// TokenCachePathForContext returns the path to the cached token file for a specific context.
+// TokenCachePathForContext returns the path to the cached token file for a
+// specific context. The name is normalized so every caller — login writing,
+// logout/delete removing, rename moving — lands on the same file regardless
+// of how the user cased the context name.
 func TokenCachePathForContext(name string) (string, error) {
 	dir, err := getCacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "tokens", name+".json"), nil
+	return filepath.Join(dir, "tokens", config.NormalizeContextName(name)+".json"), nil
 }
 
 // LoadCachedToken reads and validates the cached token for the current context.
